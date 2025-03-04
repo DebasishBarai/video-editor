@@ -4,6 +4,7 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile } from '@ffmpeg/util';
 import Image from 'next/image';
 import { useEffect, useState, useRef, useMemo } from 'react';
+import { Video } from 'lucide-react';
 
 // Add this style function at the component level to calculate the slider percentage
 const getSliderBackground = (value: number, min: number, max: number) => {
@@ -32,14 +33,16 @@ export default function Home() {
   const [startTime, setStartTime] = useState<number>(0)
   const [gifDuration, setGifDuration] = useState<number>(2.5)
   const [isConverting, setIsConverting] = useState<boolean>(false)
-  const [activeTab, setActiveTab] = useState<'gif' | 'audio' | 'silence' | 'subtitles'>('gif');
-  const [audioQuality, setAudioQuality] = useState<'low' | 'medium' | 'high'>('medium');
+  const [activeTab, setActiveTab] = useState<'gif' | 'audio' | 'silence' | 'subtitles' | 'broll' | 'music'>('gif');
   const [silenceThreshold, setSilenceThreshold] = useState<number>(-30); // in dB
   const [minimumSilence, setMinimumSilence] = useState<number>(0.5); // in seconds
   const [subtitles, setSubtitles] = useState<string>('');
   const [isGeneratingSubtitles, setIsGeneratingSubtitles] = useState<boolean>(false);
   const [isExtractingAudio, setIsExtractingAudio] = useState<boolean>(false);
   const [audio, setAudio] = useState<string | null>(null)
+  const [brollKeywords, setBrollKeywords] = useState<string>('');
+  const [selectedMusic, setSelectedMusic] = useState<File | null>(null);
+  const [musicVolume, setMusicVolume] = useState<number>(0.5);
 
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -148,12 +151,20 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 p-8">
       <main className="max-w-2xl mx-auto flex flex-col gap-8 items-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-3">
+            <Video className="w-8 h-8 text-indigo-600" />
+            <h1 className="text-3xl font-bold text-center text-slate-800">
+              Video Wizard
+            </h1>
+          </div>
+          <p className="text-slate-600 text-center max-w-lg">
+            Transform your videos with AI-powered tools. Convert to GIF, enhance audio, generate subtitles, and more.
+          </p>
+        </div>
+
         {ffmpeg ? (
           <div className="w-full space-y-6">
-            <h1 className="text-3xl font-bold text-center text-slate-800">
-              Video Editor Online
-            </h1>
-
             <div className="bg-white p-6 rounded-lg shadow-md">
               {/* Video Preview */}
               {video && videoUrl && (
@@ -298,29 +309,36 @@ export default function Home() {
 
                     {activeTab === 'audio' && (
                       <div className="space-y-6">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-600 mb-2">
-                            Audio Quality
-                          </label>
-                          <div className="grid grid-cols-3 gap-2">
-                            {['low', 'medium', 'high'].map((quality) => (
-                              <button
-                                key={quality}
-                                onClick={() => setAudioQuality(quality as 'low' | 'medium' | 'high')}
-                                className={`py-2 px-4 rounded-lg font-medium capitalize
-                                  ${audioQuality === quality
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                              >
-                                {quality}
-                              </button>
-                            ))}
-                          </div>
+                        <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
+                          Enhance audio quality and reduce background noise
                         </div>
 
-                        <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
-                          Audio will be enhanced using {audioQuality} quality settings
-                        </div>
+                        {isExtractingAudio && (
+                          <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                            <p className="text-slate-600">Enhancing audio...</p>
+                          </div>
+                        )}
+
+                        {audio && !isExtractingAudio && (
+                          <div>
+                            <label className="block text-sm font-medium text-slate-600 mb-2">
+                              Enhanced Audio
+                            </label>
+                            <audio controls className="w-full">
+                              <source src={audio} type="audio/wav" />
+                              Your browser does not support the audio element.
+                            </audio>
+                            <a
+                              href={audio}
+                              download="enhanced-audio.wav"
+                              className="mt-4 inline-block w-full text-center py-2 px-4 rounded-full
+                                bg-green-600 text-white font-medium hover:bg-green-700"
+                            >
+                              Download Enhanced Audio
+                            </a>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -443,13 +461,155 @@ export default function Home() {
                         )}
                       </div>
                     )}
+
+                    {activeTab === 'broll' && (
+                      <div className="space-y-6">
+                        <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
+                          Generate relevant B-roll footage based on keywords
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-slate-600 mb-2">
+                            B-Roll Keywords
+                          </label>
+                          <textarea
+                            value={brollKeywords}
+                            onChange={(e) => setBrollKeywords(e.target.value)}
+                            placeholder="Enter keywords for B-roll footage (e.g., nature, city, technology)"
+                            className="w-full h-24 p-3 rounded-lg border border-slate-200 
+                              focus:outline-none focus:ring-2 focus:ring-indigo-500
+                              text-sm"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-slate-50 p-4 rounded-lg">
+                            <h3 className="text-sm font-medium text-slate-600 mb-2">Suggested Keywords</h3>
+                            <div className="flex flex-wrap gap-2">
+                              {['nature', 'technology', 'business', 'lifestyle', 'urban'].map((keyword) => (
+                                <button
+                                  key={keyword}
+                                  onClick={() => setBrollKeywords(prev => prev ? `${prev}, ${keyword}` : keyword)}
+                                  className="px-3 py-1 text-xs rounded-full bg-white border border-slate-200
+                                    hover:border-indigo-500 text-slate-600"
+                                >
+                                  {keyword}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          
+                          <div className="bg-slate-50 p-4 rounded-lg">
+                            <h3 className="text-sm font-medium text-slate-600 mb-2">Style</h3>
+                            <div className="flex flex-wrap gap-2">
+                              {['Cinematic', 'Documentary', 'Modern', 'Vintage'].map((style) => (
+                                <button
+                                  key={style}
+                                  className="px-3 py-1 text-xs rounded-full bg-white border border-slate-200
+                                    hover:border-indigo-500 text-slate-600"
+                                >
+                                  {style}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeTab === 'music' && (
+                      <div className="space-y-6">
+                        <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
+                          Add background music to your video
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-slate-600 mb-2">
+                            Upload Music File
+                          </label>
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            onChange={(e) => setSelectedMusic(e.target.files?.[0] || null)}
+                            className="w-full text-sm text-slate-500
+                              file:mr-4 file:py-2 file:px-4
+                              file:rounded-full file:border-0
+                              file:text-sm file:font-semibold
+                              file:bg-indigo-50 file:text-indigo-600
+                              hover:file:bg-indigo-100
+                              cursor-pointer"
+                          />
+                        </div>
+
+                        {selectedMusic && (
+                          <>
+                            <div>
+                              <div className="flex justify-between items-center mb-1">
+                                <label className="block text-sm font-medium text-slate-600">
+                                  Music Volume
+                                </label>
+                                <span className="text-sm text-slate-500">
+                                  {Math.round(musicVolume * 100)}%
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={musicVolume}
+                                onChange={(e) => setMusicVolume(Number(e.target.value))}
+                                style={{
+                                  background: getSliderBackground(musicVolume, 0, 1)
+                                }}
+                                className="w-full h-2 rounded-lg appearance-none cursor-pointer
+                                  [&::-webkit-slider-thumb]:appearance-none
+                                  [&::-webkit-slider-thumb]:h-4
+                                  [&::-webkit-slider-thumb]:w-4
+                                  [&::-webkit-slider-thumb]:rounded-full
+                                  [&::-webkit-slider-thumb]:bg-white
+                                  [&::-webkit-slider-thumb]:border-2
+                                  [&::-webkit-slider-thumb]:border-indigo-600
+                                  [&::-webkit-slider-thumb]:cursor-pointer
+                                  [&::-webkit-slider-thumb]:shadow-md"
+                              />
+                            </div>
+
+                            <div className="bg-slate-50 p-4 rounded-lg">
+                              <h3 className="text-sm font-medium text-slate-600 mb-2">Preview</h3>
+                              <audio controls className="w-full">
+                                <source src={URL.createObjectURL(selectedMusic)} type="audio/*" />
+                                Your browser does not support the audio element.
+                              </audio>
+                            </div>
+                          </>
+                        )}
+
+                        {!selectedMusic && (
+                          <div className="bg-slate-50 p-4 rounded-lg">
+                            <h3 className="text-sm font-medium text-slate-600 mb-2">Sample Tracks</h3>
+                            <div className="space-y-2">
+                              {['Upbeat', 'Ambient', 'Cinematic', 'Corporate'].map((genre) => (
+                                <button
+                                  key={genre}
+                                  className="w-full px-4 py-2 text-left text-sm rounded-lg bg-white 
+                                    border border-slate-200 hover:border-indigo-500 text-slate-600"
+                                >
+                                  {genre} Music
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Convert Button */}
                 {video && (
                   <button
-                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? extractAudio : activeTab === 'silence' ? removeSilence : generateCaptions}
+                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? extractAudio : activeTab === 'silence' ? removeSilence : activeTab === 'subtitles' ? generateCaptions : activeTab === 'broll' ? generateCaptions : generateCaptions}
                     disabled={!video || isConverting || isGeneratingSubtitles}
                     className={`w-full py-2 px-4 rounded-full cursor-pointer font-medium
                       ${!video || isConverting || isGeneratingSubtitles
@@ -464,16 +624,20 @@ export default function Home() {
                           ? 'Enhance Audio'
                           : activeTab === 'silence'
                             ? 'Remove Silence'
-                            : 'Generate Subtitles'}
+                            : activeTab === 'subtitles'
+                              ? 'Generate Subtitles'
+                              : activeTab === 'broll'
+                                ? 'Generate B-Roll'
+                                : 'Add Background Music'}
                   </button>
                 )}
 
-                {/* Tab buttons should be moved above the tab content */}
+                {/* Replace the horizontal scrolling tab container with a wrapped grid layout */}
                 {video && (
-                  <div className="flex space-x-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-6">
                     <button
                       onClick={() => setActiveTab('gif')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
                         ${activeTab === 'gif'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -482,7 +646,7 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => setActiveTab('audio')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
                         ${activeTab === 'audio'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -491,7 +655,7 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => setActiveTab('silence')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
                         ${activeTab === 'silence'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -500,12 +664,30 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => setActiveTab('subtitles')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
                         ${activeTab === 'subtitles'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                     >
                       Generate Subtitles
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('broll')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
+                        ${activeTab === 'broll'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      Generate B-Roll
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('music')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
+                        ${activeTab === 'music'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      Add Background Music
                     </button>
                   </div>
                 )}
