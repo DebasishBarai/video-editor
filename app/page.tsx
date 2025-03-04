@@ -28,7 +28,7 @@ const formatTime = (seconds: number) => {
 export default function Home() {
   const [ffmpeg, setFFmpeg] = useState<FFmpeg | null>(null)
   const [video, setVideo] = useState<File | null | undefined>(null)
-  const [gif, setGif] = useState<string | null>(null)
+  const [output, setOutput] = useState<string | null>(null)
   const [videoDuration, setVideoDuration] = useState<number>(0)
   const [startTime, setStartTime] = useState<number>(0)
   const [gifDuration, setGifDuration] = useState<number>(2.5)
@@ -43,6 +43,8 @@ export default function Home() {
   const [brollKeywords, setBrollKeywords] = useState<string>('');
   const [selectedMusic, setSelectedMusic] = useState<File | null>(null);
   const [musicVolume, setMusicVolume] = useState<number>(0.5);
+  const [lastRun, setLastRun] = useState<'gif' | 'audio' | 'silence' | 'subtitles' | 'broll' | 'music'>('gif');
+  ;
 
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -90,7 +92,7 @@ export default function Home() {
   const convertToGif = async () => {
     if (!ffmpeg || !video) return;
     setIsConverting(true);  // Start loading
-    setGif(null);  // Clear previous GIF
+    setOutput(null);  // Clear previous GIF
 
     try {
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
@@ -104,7 +106,8 @@ export default function Home() {
 
       const data = await ffmpeg.readFile('output.gif');
       const url = URL.createObjectURL(new Blob([data], { type: 'image/gif' }));
-      setGif(url);
+      setOutput(url);
+      setLastRun('gif');
     } catch (error) {
       console.error('Error converting video to GIF:', error);
       // Optionally add error handling UI here
@@ -137,6 +140,38 @@ export default function Home() {
       // Optionally add error handling UI here
     } finally {
       setIsExtractingAudio(false);  // End loading
+    }
+  };
+
+  const enhanceAudio = async () => {
+    if (!ffmpeg || !video) return;
+    setIsConverting(true);  // Use the correct loading state
+    setOutput(null);  // Clear previous output
+
+    try {
+      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
+      // Enhanced audio processing with better parameters
+      await ffmpeg.exec([
+        '-i', 'input.mp4',
+        '-af',
+        'highpass=f=200,lowpass=f=3000,' + // Filter out unwanted frequencies
+        'afftdn=nf=-20,' +                 // Noise reduction
+        'compand=.3|.3:1|1:-90/-60|-60/-40|-40/-30|-20/-20:6:0:-90:0.2,' + // Dynamic range compression
+        'volume=2,' +                       // Increase volume
+        'equalizer=f=1000:width_type=o:width=2:g=3,' + // Boost speech frequencies
+        'loudnorm=I=-16:LRA=11:TP=-1.5',   // Normalize loudness
+        '-c:v', 'copy',                     // Copy video stream without re-encoding
+        'output.mp4'
+      ]);
+
+      const data = await ffmpeg.readFile('output.mp4');
+      const url = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
+      setOutput(url);
+      setLastRun('audio');
+    } catch (error) {
+      console.error('Error enhancing audio:', error);
+    } finally {
+      setIsConverting(false);  // End loading state
     }
   };
 
@@ -467,7 +502,7 @@ export default function Home() {
                         <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
                           Generate relevant B-roll footage based on keywords
                         </div>
-                        
+
                         <div>
                           <label className="block text-sm font-medium text-slate-600 mb-2">
                             B-Roll Keywords
@@ -498,7 +533,7 @@ export default function Home() {
                               ))}
                             </div>
                           </div>
-                          
+
                           <div className="bg-slate-50 p-4 rounded-lg">
                             <h3 className="text-sm font-medium text-slate-600 mb-2">Style</h3>
                             <div className="flex flex-wrap gap-2">
@@ -609,7 +644,7 @@ export default function Home() {
                 {/* Convert Button */}
                 {video && (
                   <button
-                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? extractAudio : activeTab === 'silence' ? removeSilence : activeTab === 'subtitles' ? generateCaptions : activeTab === 'broll' ? generateCaptions : generateCaptions}
+                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? enhanceAudio : activeTab === 'silence' ? removeSilence : activeTab === 'subtitles' ? generateCaptions : activeTab === 'broll' ? generateCaptions : generateCaptions}
                     disabled={!video || isConverting || isGeneratingSubtitles}
                     className={`w-full py-2 px-4 rounded-full cursor-pointer font-medium
                       ${!video || isConverting || isGeneratingSubtitles
@@ -694,11 +729,11 @@ export default function Home() {
               </div>
             </div>
 
-            {/* GIF Output */}
-            {(gif || isConverting) && (
+            {/* Output */}
+            {(output || isConverting) && (
               <div className="bg-white p-6 rounded-lg shadow-md">
                 <p className="text-sm font-medium text-slate-600 mb-2">
-                  {isConverting ? 'Converting video to GIF...' : 'Generated GIF:'}
+                  {isConverting ? 'Converting video...' : 'Generated output:'}
                 </p>
 
                 {isConverting ? (
@@ -706,10 +741,10 @@ export default function Home() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                     <p className="text-slate-600">Processing your GIF...</p>
                   </div>
-                ) : (gif &&
+                ) : (output && (lastRun === 'gif' ?
                   <>
                     <Image
-                      src={gif!}
+                      src={output!}
                       alt="Generated GIF"
                       width={640}
                       height={480}
@@ -717,15 +752,25 @@ export default function Home() {
                       unoptimized // Since we're using a Blob URL
                     />
                     <a
-                      href={gif}
+                      href={output}
                       download="converted.gif"
                       className="mt-4 inline-block w-full text-center py-2 px-4 rounded-full
                         bg-green-600 text-white font-medium hover:bg-green-700 cursor-pointer"
                     >
-                      Download GIF
+                      Download
                     </a>
-                  </>
-                )}
+                  </> : lastRun === 'audio' ?
+                    <>
+                      <div className="mb-6">
+                        <p className="text-sm font-medium text-slate-600 mb-2">Preview:</p>
+                        <video
+                          controls
+                          className="w-full rounded-lg border border-slate-200"
+                          src={output!}
+                        />
+                      </div>
+                    </> : null
+                ))}
               </div>
             )}
           </div>
