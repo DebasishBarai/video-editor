@@ -38,6 +38,8 @@ export default function Home() {
   const [minimumSilence, setMinimumSilence] = useState<number>(0.5); // in seconds
   const [subtitles, setSubtitles] = useState<string>('');
   const [isGeneratingSubtitles, setIsGeneratingSubtitles] = useState<boolean>(false);
+  const [isExtractingAudio, setIsExtractingAudio] = useState<boolean>(false);
+  const [audio, setAudio] = useState<string | null>(null)
 
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -108,13 +110,48 @@ export default function Home() {
     }
   };
 
+  const extractAudio = async () => {
+    if (!ffmpeg || !video) return;
+    setIsExtractingAudio(true);  // Start loading
+    setAudio(null);  // Clear previous audio
+
+    try {
+      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
+      await ffmpeg.exec([
+        '-i', 'input.mp4',
+        '-vn',
+        '-acodec', 'pcm_s16le',
+        '-ar', '16000',
+        '-ac', '1',
+        'output.wav'
+      ]);
+
+      const data = await ffmpeg.readFile('output.wav');
+      const url = URL.createObjectURL(new Blob([data], { type: 'audio/wav' }));
+      setAudio(url);
+    } catch (error) {
+      console.error('Error extracting audio:', error);
+      // Optionally add error handling UI here
+    } finally {
+      setIsExtractingAudio(false);  // End loading
+    }
+  };
+
+  const removeSilence = async () => {
+    if (!ffmpeg || !video) return;
+  }
+
+  const generateCaptions = async () => {
+    if (!ffmpeg || !video) return;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 p-8">
       <main className="max-w-2xl mx-auto flex flex-col gap-8 items-center">
         {ffmpeg ? (
           <div className="w-full space-y-6">
             <h1 className="text-3xl font-bold text-center text-slate-800">
-              Video to GIF Converter
+              Video Editor Online
             </h1>
 
             <div className="bg-white p-6 rounded-lg shadow-md">
@@ -275,7 +312,7 @@ export default function Home() {
                                     ? 'bg-indigo-600 text-white'
                                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                               >
-                              {quality}
+                                {quality}
                               </button>
                             ))}
                           </div>
@@ -362,13 +399,13 @@ export default function Home() {
                     {activeTab === 'subtitles' && (
                       <div className="space-y-6">
                         <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
-                          Generate subtitles from video audio
+                          Generate captions from video audio
                         </div>
-                        
+
                         {subtitles && (
                           <div>
                             <label className="block text-sm font-medium text-slate-600 mb-2">
-                              Generated Subtitles
+                              Generated captions
                             </label>
                             <textarea
                               value={subtitles}
@@ -397,7 +434,7 @@ export default function Home() {
                             </div>
                           </div>
                         )}
-                        
+
                         {isGeneratingSubtitles && (
                           <div className="flex flex-col items-center justify-center py-8 space-y-4">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -412,16 +449,16 @@ export default function Home() {
                 {/* Convert Button */}
                 {video && (
                   <button
-                    onClick={convertToGif}
+                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? extractAudio : activeTab === 'silence' ? removeSilence : generateCaptions}
                     disabled={!video || isConverting || isGeneratingSubtitles}
-                    className={`w-full py-2 px-4 rounded-full font-medium
+                    className={`w-full py-2 px-4 rounded-full cursor-pointer font-medium
                       ${!video || isConverting || isGeneratingSubtitles
                         ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                         : 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer'}`}
                   >
                     {isConverting || isGeneratingSubtitles
-                      ? 'Processing...' 
-                      : activeTab === 'gif' 
+                      ? 'Processing...'
+                      : activeTab === 'gif'
                         ? 'Convert to GIF'
                         : activeTab === 'audio'
                           ? 'Enhance Audio'
