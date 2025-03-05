@@ -145,6 +145,10 @@ export default function Home() {
     }
   };
 
+  const handleProgress = (progress: { progress: number }) => {
+    setProgress(Math.round(progress.progress * 100));
+  };
+
   const enhanceAudio = async () => {
     if (!ffmpeg || !video) return;
     setIsConverting(true);
@@ -155,9 +159,7 @@ export default function Home() {
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
       
       // Set up progress handler
-      ffmpeg.on('progress', (progress) => {
-        setProgress(Math.round(progress.progress * 100));
-      });
+      ffmpeg.on('progress', handleProgress);
 
       // Enhanced audio processing with better parameters
       await ffmpeg.exec([
@@ -182,7 +184,7 @@ export default function Home() {
     } finally {
       setIsConverting(false);
       setProgress(0);
-      ffmpeg.off('progress'); // Clean up event listener
+      ffmpeg.off('progress', handleProgress); // Clean up event listener
     }
   };
 
@@ -700,7 +702,7 @@ export default function Home() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-6">
                     <button
                       onClick={() => setActiveTab('gif')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
                         ${activeTab === 'gif'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -709,7 +711,7 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => setActiveTab('audio')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
                         ${activeTab === 'audio'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -718,7 +720,7 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => setActiveTab('silence')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
                         ${activeTab === 'silence'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -727,7 +729,7 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => setActiveTab('subtitles')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
                         ${activeTab === 'subtitles'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -736,7 +738,7 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => setActiveTab('broll')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
                         ${activeTab === 'broll'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -745,7 +747,7 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => setActiveTab('music')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
                         ${activeTab === 'music'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
