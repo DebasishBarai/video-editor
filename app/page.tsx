@@ -44,6 +44,8 @@ export default function Home() {
   const [selectedMusic, setSelectedMusic] = useState<File | null>(null);
   const [musicVolume, setMusicVolume] = useState<number>(0.5);
   const [lastRun, setLastRun] = useState<'gif' | 'audio' | 'silence' | 'subtitles' | 'broll' | 'music'>('gif');
+  const [progress, setProgress] = useState<number>(0);
+  // const [totalFrames, setTotalFrames] = useState<number>(0);
   ;
 
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -145,22 +147,29 @@ export default function Home() {
 
   const enhanceAudio = async () => {
     if (!ffmpeg || !video) return;
-    setIsConverting(true);  // Use the correct loading state
-    setOutput(null);  // Clear previous output
+    setIsConverting(true);
+    setOutput(null);
+    setProgress(0);
 
     try {
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
+      
+      // Set up progress handler
+      ffmpeg.on('progress', (progress) => {
+        setProgress(Math.round(progress.progress * 100));
+      });
+
       // Enhanced audio processing with better parameters
       await ffmpeg.exec([
         '-i', 'input.mp4',
         '-af',
-        'highpass=f=200,lowpass=f=3000,' + // Filter out unwanted frequencies
-        'afftdn=nf=-20,' +                 // Noise reduction
-        'compand=.3|.3:1|1:-90/-60|-60/-40|-40/-30|-20/-20:6:0:-90:0.2,' + // Dynamic range compression
-        'volume=2,' +                       // Increase volume
-        'equalizer=f=1000:width_type=o:width=2:g=3,' + // Boost speech frequencies
-        'loudnorm=I=-16:LRA=11:TP=-1.5',   // Normalize loudness
-        '-c:v', 'copy',                     // Copy video stream without re-encoding
+        'highpass=f=200,lowpass=f=3000,' +
+        'afftdn=nf=-20,' +
+        'compand=.3|.3:1|1:-90/-60|-60/-40|-40/-30|-20/-20:6:0:-90:0.2,' +
+        'volume=2,' +
+        'equalizer=f=1000:width_type=o:width=2:g=3,' +
+        'loudnorm=I=-16:LRA=11:TP=-1.5',
+        '-c:v', 'copy',
         'output.mp4'
       ]);
 
@@ -171,7 +180,9 @@ export default function Home() {
     } catch (error) {
       console.error('Error enhancing audio:', error);
     } finally {
-      setIsConverting(false);  // End loading state
+      setIsConverting(false);
+      setProgress(0);
+      ffmpeg.off('progress'); // Clean up event listener
     }
   };
 
@@ -347,6 +358,23 @@ export default function Home() {
                         <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
                           Enhance audio quality and reduce background noise
                         </div>
+
+                        {isConverting && (
+                          <div className="space-y-4">
+                            <div className="flex flex-col items-center justify-center py-4 space-y-4">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                              <p className="text-slate-600">Enhancing audio... {progress}%</p>
+                            </div>
+                            
+                            {/* Progress bar */}
+                            <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
+                              <div 
+                                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                                style={{ width: `${progress}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        )}
 
                         {isExtractingAudio && (
                           <div className="flex flex-col items-center justify-center py-8 space-y-4">
@@ -677,7 +705,7 @@ export default function Home() {
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                     >
-                      Convert to GIF
+                      Create GIF
                     </button>
                     <button
                       onClick={() => setActiveTab('audio')}
@@ -739,7 +767,7 @@ export default function Home() {
                 {isConverting ? (
                   <div className="flex flex-col items-center justify-center py-8 space-y-4">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                    <p className="text-slate-600">Processing your GIF...</p>
+                    <p className="text-slate-600">Processing...</p>
                   </div>
                 ) : (output && (lastRun === 'gif' ?
                   <>
@@ -769,6 +797,14 @@ export default function Home() {
                           src={output!}
                         />
                       </div>
+                      <a
+                        href={output}
+                        download="converted.mp4"
+                        className="mt-4 inline-block w-full text-center py-2 px-4 rounded-full
+                        bg-green-600 text-white font-medium hover:bg-green-700 cursor-pointer"
+                      >
+                        Download
+                      </a>
                     </> : null
                 ))}
               </div>
