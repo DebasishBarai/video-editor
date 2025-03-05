@@ -146,7 +146,7 @@ export default function Home() {
   };
 
   const handleProgress = (progress: { progress: number }) => {
-    setProgress(Math.round(progress.progress * 100));
+    setProgress(Math.max(0,Math.min(Math.round(progress.progress * 100), 100)));
   };
 
   const enhanceAudio = async () => {
