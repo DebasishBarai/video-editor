@@ -76,6 +76,10 @@ export default function Home() {
     load()
   }, [])
 
+  const handleProgress = (progress: { progress: number }) => {
+    setProgress(Math.max(0, Math.min(Math.round(progress.progress * 100), 100)));
+  };
+
   const handleVideoLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.item(0)
     if (file) {
@@ -93,13 +97,21 @@ export default function Home() {
   }
 
   const convertToGif = async () => {
+
     if (!ffmpeg || !video) return;
+
     setIsConverting(true);  // Start loading
     setOutput(null);  // Clear previous GIF
+    setProgress(0);
     setCurrentRun('gif');
 
     try {
+
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
+
+      // Set up progress handler
+      ffmpeg.on('progress', handleProgress);
+
       await ffmpeg.exec([
         '-i', 'input.mp4',
         '-t', gifDuration.toString(),
@@ -117,11 +129,15 @@ export default function Home() {
       // Optionally add error handling UI here
     } finally {
       setIsConverting(false);  // End loading
+      ffmpeg.off('progress', handleProgress);
+      setProgress(0);
     }
   };
 
   const extractAudio = async () => {
+
     if (!ffmpeg || !video) return;
+
     setIsExtractingAudio(true);  // Start loading
     setAudio(null);  // Clear previous audio
 
@@ -147,12 +163,28 @@ export default function Home() {
     }
   };
 
-  const handleProgress = (progress: { progress: number }) => {
-    setProgress(Math.max(0, Math.min(Math.round(progress.progress * 100), 100)));
-  };
+  const generateSubtitles = async () => {
+
+    if (!ffmpeg || !video || !audio) return
+
+    setIsGeneratingSubtitles(true)
+    setSubtitles('')
+
+    try {
+
+    } catch (error) {
+      console.error('Error generating subtitles:', error);
+      // Optionally add error handling UI here
+    } finally {
+      setIsGeneratingSubtitles(false);  // End loading
+    }
+
+  }
 
   const enhanceAudio = async () => {
+
     if (!ffmpeg || !video) return;
+
     setIsConverting(true);
     setOutput(null);
     setProgress(0);
@@ -186,13 +218,15 @@ export default function Home() {
       console.error('Error enhancing audio:', error);
     } finally {
       setIsConverting(false);
-      setProgress(0);
       ffmpeg.off('progress', handleProgress); // Clean up event listener
+      setProgress(0);
     }
   };
 
   const removeSilence = async () => {
+
     if (!ffmpeg || !video) return;
+
     setIsConverting(true);
     setOutput(null);
     setProgress(0);
@@ -222,13 +256,49 @@ export default function Home() {
       console.error('Error enhancing audio:', error);
     } finally {
       setIsConverting(false);
-      setProgress(0);
       ffmpeg.off('progress', handleProgress); // Clean up event listener
+      setProgress(0);
     }
   }
 
-  const generateCaptions = async () => {
+  const addCaptions = async () => {
+
     if (!ffmpeg || !video) return;
+
+    setIsConverting(true);
+    setOutput(null);
+    setProgress(0);
+    setCurrentRun('subtitles');
+
+    try {
+      await extractAudio()
+
+      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
+
+      // Set up progress handler
+      ffmpeg.on('progress', handleProgress);
+
+      const silenceRemoveFilter = `silenceremove=start_periods=1:start_duration=${minimumSilence}:start_threshold=${silenceThreshold}dB:stop_periods=1:stop_duration=${minimumSilence}:stop_threshold=${silenceThreshold}dB`;
+
+      // Enhanced audio processing with better parameters
+      await ffmpeg.exec([
+        '-i', 'input.mp4',
+        '-af',
+        silenceRemoveFilter,
+        'output.mp4'
+      ]);
+
+      const data = await ffmpeg.readFile('output.mp4');
+      const url = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
+      setOutput(url);
+      setLastRun('silence');
+    } catch (error) {
+      console.error('Error enhancing audio:', error);
+    } finally {
+      setIsConverting(false);
+      ffmpeg.off('progress', handleProgress); // Clean up event listener
+      setProgress(0);
+    }
   }
 
   return (
@@ -389,6 +459,23 @@ export default function Home() {
                           GIF will be created from {formatTime(startTime)} to {formatTime(startTime + gifDuration)}
                           {videoDuration ? ` (Video length: ${formatTime(videoDuration)})` : ''}
                         </div>
+
+                        {isConverting && currentRun === 'gif' && (
+                          <div className="space-y-4">
+                            <div className="flex flex-col items-center justify-center py-4 space-y-4">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                              <p className="text-slate-600">Creating GIF... {progress}%</p>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
+                              <div
+                                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                                style={{ width: `${progress}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
 
@@ -511,7 +598,7 @@ export default function Home() {
                     {activeTab === 'subtitles' && (
                       <div className="space-y-6">
                         <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
-                          Generate captions from video audio
+                          Add captions to the video
                         </div>
 
                         {subtitles && (
@@ -703,7 +790,7 @@ export default function Home() {
                 {/* Convert Button */}
                 {video && (
                   <button
-                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? enhanceAudio : activeTab === 'silence' ? removeSilence : activeTab === 'subtitles' ? generateCaptions : activeTab === 'broll' ? generateCaptions : generateCaptions}
+                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? enhanceAudio : activeTab === 'silence' ? removeSilence : activeTab === 'subtitles' ? addCaptions : activeTab === 'broll' ? addCaptions : addCaptions}
                     disabled={!video || isConverting || isGeneratingSubtitles}
                     className={`w-full py-2 px-4 rounded-full cursor-pointer font-medium
                       ${!video || isConverting || isGeneratingSubtitles
@@ -719,7 +806,7 @@ export default function Home() {
                           : activeTab === 'silence'
                             ? 'Remove Silence'
                             : activeTab === 'subtitles'
-                              ? 'Generate Subtitles'
+                              ? 'Add Captions'
                               : activeTab === 'broll'
                                 ? 'Generate B-Roll'
                                 : 'Add Background Music'}
@@ -763,7 +850,7 @@ export default function Home() {
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                     >
-                      Generate Subtitles
+                      Add Captions
                     </button>
                     <button
                       onClick={() => setActiveTab('broll')}
