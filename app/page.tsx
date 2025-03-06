@@ -43,6 +43,7 @@ export default function Home() {
   const [brollKeywords, setBrollKeywords] = useState<string>('');
   const [selectedMusic, setSelectedMusic] = useState<File | null>(null);
   const [musicVolume, setMusicVolume] = useState<number>(0.5);
+  const [currentRun, setCurrentRun] = useState<'gif' | 'audio' | 'silence' | 'subtitles' | 'broll' | 'music'>('gif');
   const [lastRun, setLastRun] = useState<'gif' | 'audio' | 'silence' | 'subtitles' | 'broll' | 'music'>('gif');
   const [progress, setProgress] = useState<number>(0);
   // const [totalFrames, setTotalFrames] = useState<number>(0);
@@ -95,6 +96,7 @@ export default function Home() {
     if (!ffmpeg || !video) return;
     setIsConverting(true);  // Start loading
     setOutput(null);  // Clear previous GIF
+    setCurrentRun('gif');
 
     try {
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
@@ -146,7 +148,7 @@ export default function Home() {
   };
 
   const handleProgress = (progress: { progress: number }) => {
-    setProgress(Math.max(0,Math.min(Math.round(progress.progress * 100), 100)));
+    setProgress(Math.max(0, Math.min(Math.round(progress.progress * 100), 100)));
   };
 
   const enhanceAudio = async () => {
@@ -154,10 +156,11 @@ export default function Home() {
     setIsConverting(true);
     setOutput(null);
     setProgress(0);
+    setCurrentRun('audio');
 
     try {
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
-      
+
       // Set up progress handler
       ffmpeg.on('progress', handleProgress);
 
@@ -190,6 +193,38 @@ export default function Home() {
 
   const removeSilence = async () => {
     if (!ffmpeg || !video) return;
+    setIsConverting(true);
+    setOutput(null);
+    setProgress(0);
+    setCurrentRun('silence');
+
+    try {
+      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
+
+      // Set up progress handler
+      ffmpeg.on('progress', handleProgress);
+
+      const silenceRemoveFilter = `silenceremove=start_periods=1:start_duration=${minimumSilence}:start_threshold=${silenceThreshold}dB:stop_periods=1:stop_duration=${minimumSilence}:stop_threshold=${silenceThreshold}dB`;
+
+      // Enhanced audio processing with better parameters
+      await ffmpeg.exec([
+        '-i', 'input.mp4',
+        '-af',
+        silenceRemoveFilter,
+        'output.mp4'
+      ]);
+
+      const data = await ffmpeg.readFile('output.mp4');
+      const url = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
+      setOutput(url);
+      setLastRun('silence');
+    } catch (error) {
+      console.error('Error enhancing audio:', error);
+    } finally {
+      setIsConverting(false);
+      setProgress(0);
+      ffmpeg.off('progress', handleProgress); // Clean up event listener
+    }
   }
 
   const generateCaptions = async () => {
@@ -275,6 +310,7 @@ export default function Home() {
                             style={{
                               background: getSliderBackground(startTime, 0, Math.max(0, videoDuration - 4))
                             }}
+                            disabled={isConverting}
                             className="w-full h-2 rounded-lg appearance-none cursor-pointer
                               [&::-webkit-slider-thumb]:appearance-none
                               [&::-webkit-slider-thumb]:h-4
@@ -321,6 +357,7 @@ export default function Home() {
                             style={{
                               background: getSliderBackground(gifDuration, 0.1, Math.min(4, videoDuration - startTime))
                             }}
+                            disabled={isConverting}
                             className="w-full h-2 rounded-lg appearance-none cursor-pointer
                               [&::-webkit-slider-thumb]:appearance-none
                               [&::-webkit-slider-thumb]:h-4
@@ -361,47 +398,20 @@ export default function Home() {
                           Enhance audio quality and reduce background noise
                         </div>
 
-                        {isConverting && (
+                        {isConverting && currentRun === 'audio' && (
                           <div className="space-y-4">
                             <div className="flex flex-col items-center justify-center py-4 space-y-4">
                               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                               <p className="text-slate-600">Enhancing audio... {progress}%</p>
                             </div>
-                            
+
                             {/* Progress bar */}
                             <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
-                              <div 
+                              <div
                                 className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress}%` }}
                               ></div>
                             </div>
-                          </div>
-                        )}
-
-                        {isExtractingAudio && (
-                          <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                            <p className="text-slate-600">Enhancing audio...</p>
-                          </div>
-                        )}
-
-                        {audio && !isExtractingAudio && (
-                          <div>
-                            <label className="block text-sm font-medium text-slate-600 mb-2">
-                              Enhanced Audio
-                            </label>
-                            <audio controls className="w-full">
-                              <source src={audio} type="audio/wav" />
-                              Your browser does not support the audio element.
-                            </audio>
-                            <a
-                              href={audio}
-                              download="enhanced-audio.wav"
-                              className="mt-4 inline-block w-full text-center py-2 px-4 rounded-full
-                                bg-green-600 text-white font-medium hover:bg-green-700"
-                            >
-                              Download Enhanced Audio
-                            </a>
                           </div>
                         )}
                       </div>
@@ -428,6 +438,7 @@ export default function Home() {
                             style={{
                               background: getSliderBackground(silenceThreshold + 60, 0, 40)
                             }}
+                            disabled={isConverting}
                             className="w-full h-2 rounded-lg appearance-none cursor-pointer
                               [&::-webkit-slider-thumb]:appearance-none
                               [&::-webkit-slider-thumb]:h-4
@@ -460,6 +471,7 @@ export default function Home() {
                             style={{
                               background: getSliderBackground(minimumSilence, 0.1, 2)
                             }}
+                            disabled={isConverting}
                             className="w-full h-2 rounded-lg appearance-none cursor-pointer
                               [&::-webkit-slider-thumb]:appearance-none
                               [&::-webkit-slider-thumb]:h-4
@@ -476,6 +488,23 @@ export default function Home() {
                         <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
                           Silence detection: {silenceThreshold}dB threshold, minimum {minimumSilence}s duration
                         </div>
+
+                        {isConverting && currentRun === 'silence' && (
+                          <div className="space-y-4">
+                            <div className="flex flex-col items-center justify-center py-4 space-y-4">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                              <p className="text-slate-600">Removing silence... {progress}%</p>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
+                              <div
+                                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                                style={{ width: `${progress}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -789,7 +818,7 @@ export default function Home() {
                     >
                       Download
                     </a>
-                  </> : lastRun === 'audio' ?
+                  </> : lastRun === 'audio' || lastRun === 'silence' ?
                     <>
                       <div className="mb-6">
                         <p className="text-sm font-medium text-slate-600 mb-2">Preview:</p>
