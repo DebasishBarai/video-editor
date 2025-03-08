@@ -163,20 +163,73 @@ export default function Home() {
     }
   };
 
+  // Function to convert FFmpeg audio output to base64 encoded string
+  const generateBase64Audio = async () => {
+    if (!ffmpeg || !video) return null;
+
+    try {
+      // Check if we already have the audio extracted
+      if (!audio) await extractAudio();
+      const audioData = await ffmpeg.readFile('output.wav');
+
+      // Convert Uint8Array to Base64
+      if (audioData instanceof Uint8Array) {
+
+        // Create a buffer from the Uint8Array
+        const buffer = Buffer.from(audioData);
+
+        // Convert buffer to base64
+        return buffer.toString('base64');
+      }
+
+      console.log('audioData is not a Uint8Array', audioData)
+
+      return null;
+    } catch (error) {
+      console.error('Error generating base64 audio:', error);
+      return null;
+    }
+  };
+
   const generateSubtitles = async () => {
 
-    if (!ffmpeg || !video || !audio) return
+    if (!ffmpeg || !video) return
 
     setIsGeneratingSubtitles(true)
     setSubtitles('')
+    setIsConverting(true);
+    setOutput(null);
+    setProgress(0);
+    setCurrentRun('subtitles');
 
     try {
+      // Check if we already have the audio extracted
+      if (!audio) await extractAudio();
 
+      const audioData = await ffmpeg.readFile('output.wav');
+
+      console.log('Starting direct Cloudflare API request...');
+      const response = await fetch(
+        `/api/generate-srt`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ audio: audioData })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('data', data)
     } catch (error) {
       console.error('Error generating subtitles:', error);
       // Optionally add error handling UI here
     } finally {
       setIsGeneratingSubtitles(false);  // End loading
+      setIsConverting(false);
+      setProgress(0);
     }
 
   }
@@ -790,7 +843,7 @@ export default function Home() {
                 {/* Convert Button */}
                 {video && (
                   <button
-                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? enhanceAudio : activeTab === 'silence' ? removeSilence : activeTab === 'subtitles' ? addCaptions : activeTab === 'broll' ? addCaptions : addCaptions}
+                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? enhanceAudio : activeTab === 'silence' ? removeSilence : activeTab === 'subtitles' ? generateSubtitles : activeTab === 'broll' ? addCaptions : addCaptions}
                     disabled={!video || isConverting || isGeneratingSubtitles}
                     className={`w-full py-2 px-4 rounded-full cursor-pointer font-medium
                       ${!video || isConverting || isGeneratingSubtitles
