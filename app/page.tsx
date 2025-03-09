@@ -178,7 +178,7 @@ export default function Home() {
         let binary = '';
 
         for (let i=0; i< audioData.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
+          binary += String.fromCharCode(audioData[i]);
         }
 
         return btoa(binary)
