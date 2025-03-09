@@ -175,11 +175,14 @@ export default function Home() {
       // Convert Uint8Array to Base64
       if (audioData instanceof Uint8Array) {
 
-        // Create a buffer from the Uint8Array
-        const buffer = Buffer.from(audioData);
+        let binary = '';
 
-        // Convert buffer to base64
-        return buffer.toString('base64');
+        for (let i=0; i< audioData.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+
+        return btoa(binary)
+
       }
 
       console.log('audioData is not a Uint8Array', audioData)
@@ -204,16 +207,14 @@ export default function Home() {
 
     try {
       // Check if we already have the audio extracted
-      if (!audio) await extractAudio();
-
-      const audioData = await ffmpeg.readFile('output.wav');
-
+     const base64Audio = await generateBase64Audio();
+      
       console.log('Starting direct Cloudflare API request...');
       const response = await fetch(
         `/api/generate-srt`,
         {
           method: 'POST',
-          body: JSON.stringify({ audio: audioData })
+          body: base64Audio,
         }
       );
 
