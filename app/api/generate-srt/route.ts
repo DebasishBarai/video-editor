@@ -52,21 +52,13 @@ export async function POST(request: Request) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`
+          'Authorization': `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`
         },
         body: JSON.stringify({ audio: audio })
       }
     );
 
-    // Get the full response details
-    const responseDetails = {
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      headers: Object.fromEntries(response.headers.entries()),
-    };
-
-    console.log('Response details:', responseDetails);
+    console.log('Response:', response);
 
     if (!response.ok) {
       // Try to get error response body
@@ -89,6 +81,8 @@ export async function POST(request: Request) {
 
     const data = await response.json();
 
+    console.log('Data:', data);
+    
     if (!data.success) {
       throw new Error(`Cloudflare API error: ${data.errors?.[0]?.message || 'Unknown error'}`);
     }
