@@ -214,7 +214,7 @@ export default function Home() {
         `/api/generate-srt`,
         {
           method: 'POST',
-          body: base64Audio,
+          body: JSON.stringify({ audio: base64Audio }),
         }
       );
 
