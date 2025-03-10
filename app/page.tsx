@@ -46,6 +46,7 @@ export default function Home() {
   const [currentRun, setCurrentRun] = useState<'gif' | 'audio' | 'silence' | 'subtitles' | 'broll' | 'music'>('gif');
   const [lastRun, setLastRun] = useState<'gif' | 'audio' | 'silence' | 'subtitles' | 'broll' | 'music'>('gif');
   const [progress, setProgress] = useState<number>(0);
+  const [vttSubtitles, setVttSubtitles] = useState<string>('');
   // const [totalFrames, setTotalFrames] = useState<number>(0);
   ;
 
@@ -134,60 +135,52 @@ export default function Home() {
     }
   };
 
-  const extractAudio = async () => {
-
-    if (!ffmpeg || !video) return;
+  const extractAudio = async (startTime = 0, duration = 120) => {
+    if (!ffmpeg || !video) return null;
 
     setIsExtractingAudio(true);  // Start loading
-    setAudio(null);  // Clear previous audio
 
     try {
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
       await ffmpeg.exec([
         '-i', 'input.mp4',
+        '-ss', startTime.toString(),  // Start time in seconds
         '-vn',
         '-acodec', 'pcm_s16le',
         '-ar', '16000',
         '-ac', '1',
-        '-t', '120',
+        '-t', duration.toString(),    // Duration in seconds
         'output.wav'
       ]);
 
       const data = await ffmpeg.readFile('output.wav');
       const url = URL.createObjectURL(new Blob([data], { type: 'audio/wav' }));
       setAudio(url);
+      return data;
     } catch (error) {
       console.error('Error extracting audio:', error);
-      // Optionally add error handling UI here
+      return null;
     } finally {
       setIsExtractingAudio(false);  // End loading
     }
   };
 
-  // Function to convert FFmpeg audio output to base64 encoded string
-  const generateBase64Audio = async () => {
+  const generateBase64Audio = async (startTime = 0, duration = 120) => {
     if (!ffmpeg || !video) return null;
 
     try {
-      // Check if we already have the audio extracted
-      if (!audio) await extractAudio();
-      const audioData = await ffmpeg.readFile('output.wav');
+      const audioData = await extractAudio(startTime, duration);
 
       // Convert Uint8Array to Base64
       if (audioData instanceof Uint8Array) {
-
         let binary = '';
-
         for (let i = 0; i < audioData.length; i++) {
           binary += String.fromCharCode(audioData[i]);
         }
-
-        return btoa(binary)
-
+        return btoa(binary);
       }
 
-      console.log('audioData is not a Uint8Array', audioData)
-
+      console.log('audioData is not a Uint8Array', audioData);
       return null;
     } catch (error) {
       console.error('Error generating base64 audio:', error);
@@ -196,45 +189,98 @@ export default function Home() {
   };
 
   const generateSubtitles = async () => {
+    if (!ffmpeg || !video) return;
 
-    if (!ffmpeg || !video) return
-
-    setIsGeneratingSubtitles(true)
-    setSubtitles('')
+    setIsGeneratingSubtitles(true);
+    setSubtitles('');
+    setVttSubtitles('WEBVTT\n\n'); // Initialize with VTT header
     setIsConverting(true);
     setOutput(null);
     setProgress(0);
     setCurrentRun('subtitles');
 
     try {
-      // Check if we already have the audio extracted
-      const base64Audio = await generateBase64Audio();
-
-      console.log('Starting direct Cloudflare API request...');
-      const response = await fetch(
-        `/api/generate-srt`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ audio: base64Audio }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error: ${response.statusText}`);
+      // Get video duration
+      if (!videoDuration) {
+        // If videoDuration is not set, try to get it
+        const videoElement = document.createElement('video');
+        videoElement.src = URL.createObjectURL(video);
+        await new Promise(resolve => {
+          videoElement.onloadedmetadata = resolve;
+        });
+        setVideoDuration(videoElement.duration);
+        URL.revokeObjectURL(videoElement.src);
       }
 
-      const data = await response.json();
-      console.log('data', data)
+      // Calculate number of chunks needed
+      const chunkDuration = 120; // 2 minutes in seconds
+      const totalChunks = Math.ceil(videoDuration / chunkDuration);
+      let allTranscriptions = '';
+
+      // Process each chunk
+      for (let i = 0; i < totalChunks; i++) {
+        const startTime = i * chunkDuration;
+        const duration = Math.min(chunkDuration, videoDuration - startTime);
+
+        // Update progress
+        setProgress(Math.round((i / totalChunks) * 100));
+
+        // Extract audio for this chunk
+        const base64Audio = await generateBase64Audio(startTime, duration);
+
+        if (!base64Audio) {
+          console.error(`Failed to extract audio for chunk ${i + 1}/${totalChunks}`);
+          continue;
+        }
+
+        // Send to API
+        console.log(`Processing chunk ${i + 1}/${totalChunks} (${startTime}s to ${startTime + duration}s)`);
+        const response = await fetch(
+          `/api/generate-srt`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ audio: base64Audio }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        // Extract the transcription text from the response
+        if (data.success && data.result) {
+          // Append this chunk's transcription to the full text
+          if (data.result.text) {
+            allTranscriptions += (allTranscriptions ? ' ' : '') + data.result.text;
+            // Update the UI with progress
+            setSubtitles(allTranscriptions);
+          }
+
+          // Process VTT data if available
+          if (data.result.vtt) {
+            // Adjust timestamps in VTT data to account for chunk position
+            const adjustedVtt = adjustVttTimestamps(data.result.vtt, startTime);
+            setVttSubtitles(prev => prev + adjustedVtt);
+          }
+        } else {
+          console.error(`No transcription data found for chunk ${i + 1}/${totalChunks}`);
+        }
+      }
+
+      // Final update with complete transcription
+      setSubtitles(allTranscriptions);
+
     } catch (error) {
       console.error('Error generating subtitles:', error);
       // Optionally add error handling UI here
     } finally {
       setIsGeneratingSubtitles(false);  // End loading
       setIsConverting(false);
-      setProgress(0);
+      setProgress(100);  // Ensure progress shows complete
     }
-
-  }
+  };
 
   const enhanceAudio = async () => {
 
@@ -355,6 +401,136 @@ export default function Home() {
       setProgress(0);
     }
   }
+
+  // Helper function to adjust VTT timestamps
+  const adjustVttTimestamps = (vttData: string, offsetSeconds: number): string => {
+    if (!vttData) return '';
+
+    // Skip the WEBVTT header line and empty line after it
+    const lines = vttData.split('\n');
+    let inHeader = true;
+    let result = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Skip the WEBVTT header and the blank line after it
+      if (inHeader) {
+        if (line === 'WEBVTT' || line === '') {
+          continue;
+        } else {
+          inHeader = false;
+        }
+      }
+
+      // Check if this line contains timestamps
+      if (line.includes('-->')) {
+        // Extract timestamps
+        const timestamps = line.split('-->').map(t => t.trim());
+        if (timestamps.length === 2) {
+          // Parse and adjust timestamps
+          const startTime = parseVttTimestamp(timestamps[0]) + offsetSeconds;
+          const endTime = parseVttTimestamp(timestamps[1]) + offsetSeconds;
+
+          // Format adjusted timestamps
+          result += `${formatVttTimestamp(startTime)} --> ${formatVttTimestamp(endTime)}\n`;
+        } else {
+          // If we can't parse it, keep the original line
+          result += line + '\n';
+        }
+      } else {
+        // For non-timestamp lines, keep them as is
+        result += line + '\n';
+      }
+    }
+
+    return result;
+  };
+
+  // Helper function to parse VTT timestamp to seconds
+  const parseVttTimestamp = (timestamp: string): number => {
+    // Handle both HH:MM:SS.mmm and MM:SS.mmm formats
+    const parts = timestamp.split(':');
+    let hours = 0, minutes = 0, seconds = 0;
+
+    if (parts.length === 3) {
+      // HH:MM:SS.mmm format
+      hours = parseInt(parts[0], 10);
+      minutes = parseInt(parts[1], 10);
+      seconds = parseFloat(parts[2]);
+    } else if (parts.length === 2) {
+      // MM:SS.mmm format
+      minutes = parseInt(parts[0], 10);
+      seconds = parseFloat(parts[1]);
+    }
+
+    return hours * 3600 + minutes * 60 + seconds;
+  };
+
+  // Helper function to format seconds to VTT timestamp
+  const formatVttTimestamp = (totalSeconds: number): string => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    // Format with leading zeros and 3 decimal places for milliseconds
+    const formattedHours = hours.toString().padStart(2, '0');
+    const formattedMinutes = minutes.toString().padStart(2, '0');
+    const formattedSeconds = seconds.toFixed(3).padStart(6, '0');
+
+    return `${formattedHours}:${formattedMinutes}:${formattedSeconds}`;
+  };
+
+  // Update the burnSubtitlesToVideo function to include a progress bar
+  const burnSubtitlesToVideo = async () => {
+    if (!ffmpeg || !video || !vttSubtitles) return;
+
+    setIsConverting(true);
+    setOutput(null);
+    setProgress(0);
+    setCurrentRun('subtitles');
+
+    try {
+      // Write the input video file
+      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
+
+      // Write the VTT subtitle file
+      await ffmpeg.writeFile('subtitles.vtt', vttSubtitles);
+
+      console.log({ vtt: vttSubtitles });
+
+      // Convert VTT to ASS format (more styling options)
+      await ffmpeg.exec([
+        '-i', 'subtitles.vtt',
+        '-f', 'ass',
+        'subtitles.ass'
+      ]);
+
+      // Set up progress handler
+      ffmpeg.on('progress', handleProgress);
+
+      console.log('Burning subtitles into the video...');
+
+      // Burn subtitles into the video
+      await ffmpeg.exec([
+        '-i', 'input.mp4',
+        '-vf', 'ass=subtitles.ass',
+        '-c:a', 'copy',
+        'output.mp4'
+      ]);
+
+      const data = await ffmpeg.readFile('output.mp4');
+      const url = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
+      setOutput(url);
+      setLastRun('subtitles');
+    } catch (error) {
+      console.error('Error adding subtitles to video:', error);
+    } finally {
+      setIsConverting(false);
+      ffmpeg.off('progress', handleProgress);
+      setProgress(0);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 p-8">
@@ -656,6 +832,25 @@ export default function Home() {
                           Add captions to the video
                         </div>
 
+                        {/* Progress bar for subtitles generation */}
+                        {isGeneratingSubtitles && (
+                          <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-medium text-slate-600">Generating subtitles...</span>
+                              <span className="text-sm text-slate-500">{progress}%</span>
+                            </div>
+                            <div className="w-full bg-slate-200 rounded-full h-2.5">
+                              <div
+                                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                                style={{ width: `${progress}%` }}
+                              ></div>
+                            </div>
+                            <p className="text-xs text-slate-500 text-center">
+                              Processing video in chunks. This may take a while for longer videos.
+                            </p>
+                          </div>
+                        )}
+
                         {subtitles && (
                           <div>
                             <label className="block text-sm font-medium text-slate-600 mb-2">
@@ -666,33 +861,51 @@ export default function Home() {
                               onChange={(e) => setSubtitles(e.target.value)}
                               className="w-full h-64 p-3 rounded-lg border border-slate-200 
                                 focus:outline-none focus:ring-2 focus:ring-indigo-500
-                                text-sm font-mono"
+                                text-sm font-mono text-gray-900"
                               placeholder="Subtitles will appear here..."
                             />
-                            <div className="flex justify-end mt-2">
+                            <div className="flex flex-wrap justify-end mt-2 gap-2">
                               <button
                                 onClick={() => {
                                   const blob = new Blob([subtitles], { type: 'text/plain' });
                                   const url = URL.createObjectURL(blob);
                                   const a = document.createElement('a');
                                   a.href = url;
-                                  a.download = 'subtitles.srt';
+                                  a.download = 'subtitles.txt';
                                   a.click();
                                   URL.revokeObjectURL(url);
                                 }}
                                 className="px-4 py-2 rounded-lg font-medium bg-green-600 
                                   text-white hover:bg-green-700"
                               >
-                                Download Subtitles
+                                Download Text
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const blob = new Blob([vttSubtitles], { type: 'text/vtt' });
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = 'subtitles.vtt';
+                                  a.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                                className="px-4 py-2 rounded-lg font-medium bg-indigo-600 
+                                  text-white hover:bg-indigo-700"
+                              >
+                                Download VTT
+                              </button>
+                              <button
+                                onClick={burnSubtitlesToVideo}
+                                disabled={isConverting}
+                                className={`px-4 py-2 rounded-lg font-medium 
+                                  ${isConverting
+                                    ? 'bg-gray-400 cursor-not-allowed'
+                                    : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+                              >
+                                Add Subtitles to Video
                               </button>
                             </div>
-                          </div>
-                        )}
-
-                        {isGeneratingSubtitles && (
-                          <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                            <p className="text-slate-600">Generating subtitles...</p>
                           </div>
                         )}
                       </div>
@@ -845,7 +1058,12 @@ export default function Home() {
                 {/* Convert Button */}
                 {video && (
                   <button
-                    onClick={activeTab === 'gif' ? convertToGif : activeTab === 'audio' ? enhanceAudio : activeTab === 'silence' ? removeSilence : activeTab === 'subtitles' ? generateSubtitles : activeTab === 'broll' ? addCaptions : addCaptions}
+                    onClick={activeTab === 'gif' ? convertToGif :
+                      activeTab === 'audio' ? enhanceAudio :
+                        activeTab === 'silence' ? removeSilence :
+                          activeTab === 'subtitles' ? generateSubtitles :
+                            activeTab === 'broll' ? addCaptions :
+                              addCaptions}
                     disabled={!video || isConverting || isGeneratingSubtitles}
                     className={`w-full py-2 px-4 rounded-full cursor-pointer font-medium
                       ${!video || isConverting || isGeneratingSubtitles
@@ -861,7 +1079,7 @@ export default function Home() {
                           : activeTab === 'silence'
                             ? 'Remove Silence'
                             : activeTab === 'subtitles'
-                              ? 'Add Captions'
+                              ? 'Generate Subtitles'
                               : activeTab === 'broll'
                                 ? 'Generate B-Roll'
                                 : 'Add Background Music'}
@@ -934,13 +1152,37 @@ export default function Home() {
             {(output || isConverting) && (
               <div className="bg-white p-6 rounded-lg shadow-md">
                 <p className="text-sm font-medium text-slate-600 mb-2">
-                  {isConverting ? 'Converting video...' : 'Generated output:'}
+                  {isConverting ?
+                    currentRun === 'subtitles' && isGeneratingSubtitles ?
+                      'Generating subtitles...' :
+                      currentRun === 'subtitles' ?
+                        'Adding subtitles to video...' :
+                        'Converting video...'
+                    : 'Generated output:'}
                 </p>
 
                 {isConverting ? (
-                  <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                    <p className="text-slate-600">Processing...</p>
+                  <div className="flex flex-col items-center justify-center py-4 space-y-4">
+                    {/* Progress bar */}
+                    <div className="w-full space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-500">
+                          {currentRun === 'gif' ? 'Creating GIF' :
+                            currentRun === 'audio' ? 'Enhancing audio' :
+                              currentRun === 'silence' ? 'Removing silence' :
+                                currentRun === 'subtitles' && isGeneratingSubtitles ? 'Generating subtitles' :
+                                  currentRun === 'subtitles' ? 'Adding subtitles to video' :
+                                    'Processing'}
+                        </span>
+                        <span className="text-sm text-slate-500">{progress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-2.5">
+                        <div
+                          className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                          style={{ width: `${progress}%` }}
+                        ></div>
+                      </div>
+                    </div>
                   </div>
                 ) : (output && (lastRun === 'gif' ?
                   <>
@@ -960,7 +1202,7 @@ export default function Home() {
                     >
                       Download
                     </a>
-                  </> : lastRun === 'audio' || lastRun === 'silence' ?
+                  </> : lastRun === 'audio' || lastRun === 'silence' || lastRun === 'subtitles' ?
                     <>
                       <div className="mb-6">
                         <p className="text-sm font-medium text-slate-600 mb-2">Preview:</p>
