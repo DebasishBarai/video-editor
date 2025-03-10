@@ -149,6 +149,7 @@ export default function Home() {
         '-acodec', 'pcm_s16le',
         '-ar', '16000',
         '-ac', '1',
+        '-t', '120',
         'output.wav'
       ]);
 
@@ -177,7 +178,7 @@ export default function Home() {
 
         let binary = '';
 
-        for (let i=0; i< audioData.length; i++) {
+        for (let i = 0; i < audioData.length; i++) {
           binary += String.fromCharCode(audioData[i]);
         }
 
@@ -207,8 +208,8 @@ export default function Home() {
 
     try {
       // Check if we already have the audio extracted
-     const base64Audio = await generateBase64Audio();
-      
+      const base64Audio = await generateBase64Audio();
+
       console.log('Starting direct Cloudflare API request...');
       const response = await fetch(
         `/api/generate-srt`,

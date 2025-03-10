@@ -42,12 +42,10 @@ export async function POST(request: Request) {
       throw new Error('No audio data provided');
     }
 
-    console.log('type of audio', typeof audio);
-
     console.log('Making request to Cloudflare API...');
 
     const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/openai/whisper`,
+      `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/openai/whisper-large-v3-turbo`,
       {
         method: 'POST',
         headers: {
@@ -82,7 +80,7 @@ export async function POST(request: Request) {
     const data = await response.json();
 
     console.log('Data:', data);
-    
+
     if (!data.success) {
       throw new Error(`Cloudflare API error: ${data.errors?.[0]?.message || 'Unknown error'}`);
     }
