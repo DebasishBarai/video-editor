@@ -497,24 +497,19 @@ export default function Home() {
       // Write the VTT subtitle file
       await ffmpeg.writeFile('subtitles.vtt', vttSubtitles);
 
-      console.log({ vtt: vttSubtitles });
-
-      // Convert VTT to ASS format (more styling options)
+      // Convert VTT to SRT format (FFmpeg's subtitles filter works better with SRT)
       await ffmpeg.exec([
         '-i', 'subtitles.vtt',
-        '-f', 'ass',
-        'subtitles.ass'
+        'subtitles.srt'
       ]);
 
       // Set up progress handler
       ffmpeg.on('progress', handleProgress);
 
-      console.log('Burning subtitles into the video...');
-
       // Burn subtitles into the video
       await ffmpeg.exec([
         '-i', 'input.mp4',
-        '-vf', 'ass=subtitles.ass',
+        '-vf', 'subtitles=subtitles.srt:force_style=\'FontSize=24,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3\'',
         '-c:a', 'copy',
         'output.mp4'
       ]);
@@ -832,22 +827,20 @@ export default function Home() {
                           Add captions to the video
                         </div>
 
-                        {/* Progress bar for subtitles generation */}
-                        {isGeneratingSubtitles && (
+                        {isConverting && currentRun === 'subtitles' && (
                           <div className="space-y-4">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium text-slate-600">Generating subtitles...</span>
-                              <span className="text-sm text-slate-500">{progress}%</span>
+                            <div className="flex flex-col items-center justify-center py-4 space-y-4">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                              <p className="text-slate-600">Generating Subtitles... {progress}%</p>
                             </div>
-                            <div className="w-full bg-slate-200 rounded-full h-2.5">
+
+                            {/* Progress bar */}
+                            <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
                               <div
                                 className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress}%` }}
                               ></div>
                             </div>
-                            <p className="text-xs text-slate-500 text-center">
-                              Processing video in chunks. This may take a while for longer videos.
-                            </p>
                           </div>
                         )}
 
@@ -864,48 +857,6 @@ export default function Home() {
                                 text-sm font-mono text-gray-900"
                               placeholder="Subtitles will appear here..."
                             />
-                            <div className="flex flex-wrap justify-end mt-2 gap-2">
-                              <button
-                                onClick={() => {
-                                  const blob = new Blob([subtitles], { type: 'text/plain' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = 'subtitles.txt';
-                                  a.click();
-                                  URL.revokeObjectURL(url);
-                                }}
-                                className="px-4 py-2 rounded-lg font-medium bg-green-600 
-                                  text-white hover:bg-green-700"
-                              >
-                                Download Text
-                              </button>
-                              <button
-                                onClick={() => {
-                                  const blob = new Blob([vttSubtitles], { type: 'text/vtt' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = 'subtitles.vtt';
-                                  a.click();
-                                  URL.revokeObjectURL(url);
-                                }}
-                                className="px-4 py-2 rounded-lg font-medium bg-indigo-600 
-                                  text-white hover:bg-indigo-700"
-                              >
-                                Download VTT
-                              </button>
-                              <button
-                                onClick={burnSubtitlesToVideo}
-                                disabled={isConverting}
-                                className={`px-4 py-2 rounded-lg font-medium 
-                                  ${isConverting
-                                    ? 'bg-gray-400 cursor-not-allowed'
-                                    : 'bg-purple-600 text-white hover:bg-purple-700'}`}
-                              >
-                                Add Subtitles to Video
-                              </button>
-                            </div>
                           </div>
                         )}
                       </div>
