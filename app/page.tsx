@@ -38,7 +38,7 @@ export default function Home() {
   const [minimumSilence, setMinimumSilence] = useState<number>(0.5); // in seconds
   const [subtitles, setSubtitles] = useState<string>('');
   const [isGeneratingSubtitles, setIsGeneratingSubtitles] = useState<boolean>(false);
-  const [isExtractingAudio, setIsExtractingAudio] = useState<boolean>(false);
+  const [isAddingcaptions, setIsAddingCaptions] = useState<boolean>(false);
   const [audio, setAudio] = useState<string | null>(null)
   const [brollKeywords, setBrollKeywords] = useState<string>('');
   const [selectedMusic, setSelectedMusic] = useState<File | null>(null);
@@ -138,8 +138,6 @@ export default function Home() {
   const extractAudio = async (startTime = 0, duration = 120) => {
     if (!ffmpeg || !video) return null;
 
-    setIsExtractingAudio(true);  // Start loading
-
     try {
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
       await ffmpeg.exec([
@@ -161,7 +159,6 @@ export default function Home() {
       console.error('Error extracting audio:', error);
       return null;
     } finally {
-      setIsExtractingAudio(false);  // End loading
     }
   };
 
@@ -194,10 +191,7 @@ export default function Home() {
     setIsGeneratingSubtitles(true);
     setSubtitles('');
     setVttSubtitles('WEBVTT\n\n'); // Initialize with VTT header
-    setIsConverting(true);
-    setOutput(null);
     setProgress(0);
-    setCurrentRun('subtitles');
 
     try {
       // Get video duration
@@ -277,8 +271,7 @@ export default function Home() {
       // Optionally add error handling UI here
     } finally {
       setIsGeneratingSubtitles(false);  // End loading
-      setIsConverting(false);
-      setProgress(100);  // Ensure progress shows complete
+      setProgress(0);  // Ensure progress shows complete
     }
   };
 
@@ -372,32 +365,19 @@ export default function Home() {
     setCurrentRun('subtitles');
 
     try {
-      await extractAudio()
 
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
 
-      // Set up progress handler
-      ffmpeg.on('progress', handleProgress);
+      if (subtitles === '') {
+        await generateSubtitles()
+      }
 
-      const silenceRemoveFilter = `silenceremove=start_periods=1:start_duration=${minimumSilence}:start_threshold=${silenceThreshold}dB:stop_periods=1:stop_duration=${minimumSilence}:stop_threshold=${silenceThreshold}dB`;
+      await burnSubtitlesToVideo()
 
-      // Enhanced audio processing with better parameters
-      await ffmpeg.exec([
-        '-i', 'input.mp4',
-        '-af',
-        silenceRemoveFilter,
-        'output.mp4'
-      ]);
-
-      const data = await ffmpeg.readFile('output.mp4');
-      const url = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
-      setOutput(url);
-      setLastRun('silence');
     } catch (error) {
       console.error('Error enhancing audio:', error);
     } finally {
       setIsConverting(false);
-      ffmpeg.off('progress', handleProgress); // Clean up event listener
       setProgress(0);
     }
   }
@@ -485,10 +465,9 @@ export default function Home() {
   const burnSubtitlesToVideo = async () => {
     if (!ffmpeg || !video || !vttSubtitles) return;
 
-    setIsConverting(true);
+    setIsAddingCaptions(true);
     setOutput(null);
     setProgress(0);
-    setCurrentRun('subtitles');
 
     try {
       // Write the input video file
@@ -521,8 +500,8 @@ export default function Home() {
     } catch (error) {
       console.error('Error adding subtitles to video:', error);
     } finally {
-      setIsConverting(false);
       ffmpeg.off('progress', handleProgress);
+      setIsAddingCaptions(false);
       setProgress(0);
     }
   };
@@ -831,7 +810,8 @@ export default function Home() {
                           <div className="space-y-4">
                             <div className="flex flex-col items-center justify-center py-4 space-y-4">
                               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                              <p className="text-slate-600">Generating Subtitles... {progress}%</p>
+                              {isGeneratingSubtitles && (<p className="text-slate-600">Generating Subtitles... {progress}%</p>)}
+                              {isAddingcaptions && (<p className="text-slate-600">Adding Subtitles To Video... {progress}%</p>)}
                             </div>
 
                             {/* Progress bar */}
@@ -1012,7 +992,7 @@ export default function Home() {
                     onClick={activeTab === 'gif' ? convertToGif :
                       activeTab === 'audio' ? enhanceAudio :
                         activeTab === 'silence' ? removeSilence :
-                          activeTab === 'subtitles' ? generateSubtitles :
+                          activeTab === 'subtitles' ? addCaptions :
                             activeTab === 'broll' ? addCaptions :
                               addCaptions}
                     disabled={!video || isConverting || isGeneratingSubtitles}
@@ -1103,37 +1083,14 @@ export default function Home() {
             {(output || isConverting) && (
               <div className="bg-white p-6 rounded-lg shadow-md">
                 <p className="text-sm font-medium text-slate-600 mb-2">
-                  {isConverting ?
-                    currentRun === 'subtitles' && isGeneratingSubtitles ?
-                      'Generating subtitles...' :
-                      currentRun === 'subtitles' ?
-                        'Adding subtitles to video...' :
-                        'Converting video...'
+                  {isConverting ? 'Converting video...'
                     : 'Generated output:'}
                 </p>
 
                 {isConverting ? (
-                  <div className="flex flex-col items-center justify-center py-4 space-y-4">
-                    {/* Progress bar */}
-                    <div className="w-full space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-slate-500">
-                          {currentRun === 'gif' ? 'Creating GIF' :
-                            currentRun === 'audio' ? 'Enhancing audio' :
-                              currentRun === 'silence' ? 'Removing silence' :
-                                currentRun === 'subtitles' && isGeneratingSubtitles ? 'Generating subtitles' :
-                                  currentRun === 'subtitles' ? 'Adding subtitles to video' :
-                                    'Processing'}
-                        </span>
-                        <span className="text-sm text-slate-500">{progress}%</span>
-                      </div>
-                      <div className="w-full bg-slate-200 rounded-full h-2.5">
-                        <div
-                          className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
-                          style={{ width: `${progress}%` }}
-                        ></div>
-                      </div>
-                    </div>
+                  <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <p className="text-slate-600">Processing...</p>
                   </div>
                 ) : (output && (lastRun === 'gif' ?
                   <>
