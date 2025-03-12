@@ -55,6 +55,12 @@ export default function Home() {
   // Create a memoized video URL that only changes when the video file changes
   const videoUrl = useMemo(() => {
     if (!video) return null;
+
+    setOutput(null);
+    setSubtitles('');
+    setVttSubtitles('')
+    setAudio(null)
+
     return URL.createObjectURL(video);
   }, [video]);
 
