@@ -473,7 +473,7 @@ export default function Home() {
   };
 
   // Update the burnSubtitlesToVideo function to include a progress bar
-  const burnSubtitlesToVideo = async (vttSubtitles: string | null) => {
+  const burnSubtitlesToVideo = async (vttSubtitles: string | undefined | null) => {
     if (!ffmpeg || !video || !vttSubtitles) return;
 
     setIsAddingCaptions(true);
