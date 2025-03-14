@@ -199,6 +199,8 @@ export default function Home() {
     setVttSubtitles('WEBVTT\n\n'); // Initialize with VTT header
     setProgress(0);
 
+    let vttContent = 'WEBVTT\n\n';
+
     try {
       // Get video duration
       if (!videoDuration) {
@@ -263,6 +265,7 @@ export default function Home() {
             // Adjust timestamps in VTT data to account for chunk position
             const adjustedVtt = adjustVttTimestamps(data.result.vtt, startTime);
             setVttSubtitles(prev => prev + adjustedVtt);
+            vttContent = vttContent + adjustedVtt;
           }
         } else {
           console.error(`No transcription data found for chunk ${i + 1}/${totalChunks}`);
@@ -278,6 +281,7 @@ export default function Home() {
     } finally {
       setIsGeneratingSubtitles(false);  // End loading
       setProgress(0);  // Ensure progress shows complete
+      return vttContent;
     }
   };
 
@@ -374,11 +378,12 @@ export default function Home() {
 
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
 
-      if (subtitles === '') {
-        await generateSubtitles()
+      if (vttSubtitles === '') {
+        const generatedSubtitles = await generateSubtitles()
+        await burnSubtitlesToVideo(generatedSubtitles)
       }
 
-      await burnSubtitlesToVideo()
+      await burnSubtitlesToVideo(vttSubtitles)
 
     } catch (error) {
       console.error('Error enhancing audio:', error);
@@ -468,7 +473,7 @@ export default function Home() {
   };
 
   // Update the burnSubtitlesToVideo function to include a progress bar
-  const burnSubtitlesToVideo = async () => {
+  const burnSubtitlesToVideo = async (vttSubtitles: string | null) => {
     if (!ffmpeg || !video || !vttSubtitles) return;
 
     setIsAddingCaptions(true);
@@ -479,14 +484,11 @@ export default function Home() {
       // Write the input video file
       await ffmpeg.writeFile('input.mp4', await fetchFile(video));
 
-      // Write the VTT subtitle file
-      await ffmpeg.writeFile('subtitles.vtt', vttSubtitles);
-
-      // Convert VTT to SRT format (FFmpeg's subtitles filter works better with SRT)
-      await ffmpeg.exec([
-        '-i', 'subtitles.vtt',
-        'subtitles.srt'
-      ]);
+      // Write the ASS subtitle file
+      const assContent = convertVttToAss(vttSubtitles);
+      console.log({ assContent });
+      await ffmpeg.writeFile('subtitles.ass', assContent);
+      // await ffmpeg.writeFile('subtitles.ass', convertVttToAss(vttSubtitles));
 
       // Set up progress handler
       ffmpeg.on('progress', handleProgress);
@@ -494,7 +496,7 @@ export default function Home() {
       // Burn subtitles into the video
       await ffmpeg.exec([
         '-i', 'input.mp4',
-        '-vf', 'subtitles=subtitles.srt:force_style=\'FontSize=24,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3\'',
+        '-vf', 'ass=filename=subtitles.ass',
         '-c:a', 'copy',
         'output.mp4'
       ]);
@@ -510,6 +512,135 @@ export default function Home() {
       setIsAddingCaptions(false);
       setProgress(0);
     }
+  };
+
+  // Helper function to convert VTT to ASS format for download
+  const convertVttToAss = (vttContent: string): string => {
+    // Basic ASS header with modern, bold, flashy styling
+    let assContent = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+Timer: 100.0000
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+; Modern bold style with flashy colors - BIGGER FONT
+Style: Default,Arial Black,54,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,2,20,20,30,1
+; Alternative style with gradient effect - BIGGER FONT
+Style: Gradient,Arial Black,60,&H0000FFFF,&H00FF00FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,2,20,20,30,1
+; Colorful style with larger font - EVEN BIGGER
+Style: Colorful,Impact,72,&H000000FF,&H0000FFFF,&H00000000,&H80000000,-1,0,0,0,120,120,0,0,1,4,3,2,20,20,30,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+
+    // Parse VTT content
+    const lines = vttContent.split('\n');
+    let currentStartTime = '';
+    let currentEndTime = '';
+    let currentText = '';
+    let inCue = false;
+    let cueCount = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Skip WEBVTT header
+      if (line === 'WEBVTT' || line === '') {
+        continue;
+      }
+
+      // Check for timestamp line
+      if (line.includes('-->')) {
+        // If we were already in a cue, save the previous one before starting a new one
+        if (inCue && currentText) {
+          // Rotate between the three styles for visual variety
+          const style = cueCount % 3 === 0 ? 'Default' :
+            cueCount % 3 === 1 ? 'Gradient' : 'Colorful';
+
+          // Add some basic text effects for emphasis
+          let formattedText = currentText;
+
+          // For longer text, add some formatting
+          if (currentText.length > 20) {
+            // Add some basic formatting - bold for important words
+            formattedText = formattedText.replace(/\b(important|key|main|critical|essential)\b/gi, '{\\b1}$1{\\b0}');
+          }
+
+          assContent += `Dialogue: 0,${currentStartTime},${currentEndTime},${style},,0,0,0,,${formattedText}\n`;
+          cueCount++;
+        }
+
+        // Start a new cue
+        inCue = true;
+        const parts = line.split('-->').map(part => part.trim());
+        currentStartTime = convertVttTimeToAssTime(parts[0]);
+        currentEndTime = convertVttTimeToAssTime(parts[1]);
+        currentText = '';
+      }
+      // If we're in a cue and this is not a timestamp line, it's the text
+      else if (inCue) {
+        if (line !== '') {
+          // If we already have text, add a line break before adding more
+          if (currentText) {
+            currentText += '\\N';
+          }
+          currentText += line;
+        }
+      }
+    }
+
+    // Add the last cue if there is one
+    if (inCue && currentText) {
+      const style = cueCount % 3 === 0 ? 'Default' :
+        cueCount % 3 === 1 ? 'Gradient' : 'Colorful';
+
+      // Add some basic text effects for emphasis
+      let formattedText = currentText;
+
+      // For longer text, add some formatting
+      if (currentText.length > 20) {
+        // Add some basic formatting - bold for important words
+        formattedText = formattedText.replace(/\b(important|key|main|critical|essential)\b/gi, '{\\b1}$1{\\b0}');
+      }
+
+      assContent += `Dialogue: 0,${currentStartTime},${currentEndTime},${style},,0,0,0,,${formattedText}\n`;
+    }
+
+    return assContent;
+  };
+
+  // Helper function to convert VTT time format to ASS time format
+  const convertVttTimeToAssTime = (vttTime: string): string => {
+    // VTT format: 00:00:00.000
+    // ASS format: 0:00:00.00
+    const parts = vttTime.split(':');
+    let hours, minutes, seconds;
+
+    if (parts.length === 3) {
+      hours = parseInt(parts[0], 10);
+      minutes = parts[1];
+      seconds = parts[2];
+    } else if (parts.length === 2) {
+      hours = 0;
+      minutes = parts[0];
+      seconds = parts[1];
+    } else {
+      return '0:00:00.00'; // Default if format is unexpected
+    }
+
+    // Format seconds to have only 2 decimal places (ASS format)
+    const secondsParts = seconds.split('.');
+    let formattedSeconds;
+    if (secondsParts.length === 2) {
+      formattedSeconds = `${secondsParts[0]}.${secondsParts[1].substring(0, 2).padEnd(2, '0')}`;
+    } else {
+      formattedSeconds = `${secondsParts[0]}.00`;
+    }
+
+    return `${hours}:${minutes}:${formattedSeconds}`;
   };
 
   return (
@@ -843,6 +974,57 @@ export default function Home() {
                                 text-sm font-mono text-gray-900"
                               placeholder="Subtitles will appear here..."
                             />
+
+                            <div className="flex flex-wrap gap-2 mt-4">
+                              <button
+                                onClick={() => {
+                                  const blob = new Blob([vttSubtitles], { type: 'text/vtt' });
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = 'subtitles.vtt';
+                                  a.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                                className="px-4 py-2 rounded-lg font-medium bg-indigo-600 
+                                  text-white hover:bg-indigo-700"
+                              >
+                                Download VTT
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const assContent = convertVttToAss(vttSubtitles);
+                                  const blob = new Blob([assContent], { type: 'text/plain' });
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = 'subtitles.ass';
+                                  a.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                                className="px-4 py-2 rounded-lg font-medium bg-purple-600 
+                                  text-white hover:bg-purple-700"
+                              >
+                                Download ASS
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const blob = new Blob([subtitles], { type: 'text/plain' });
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = 'transcript.txt';
+                                  a.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                                className="px-4 py-2 rounded-lg font-medium bg-green-600 
+                                  text-white hover:bg-green-700"
+                              >
+                                Download Text
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
