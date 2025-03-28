@@ -193,18 +193,14 @@ export default function Home() {
 
   const generateSubtitles = async () => {
     if (!ffmpeg || !video) return;
-
     setIsGeneratingSubtitles(true);
     setSubtitles('');
     setVttSubtitles('WEBVTT\n\n'); // Initialize with VTT header
     setProgress(0);
-
     let vttContent = 'WEBVTT\n\n';
-
     try {
       // Get video duration
       if (!videoDuration) {
-        // If videoDuration is not set, try to get it
         const videoElement = document.createElement('video');
         videoElement.src = URL.createObjectURL(video);
         await new Promise(resolve => {
@@ -217,63 +213,95 @@ export default function Home() {
       // Calculate number of chunks needed
       const chunkDuration = 120; // 2 minutes in seconds
       const totalChunks = Math.ceil(videoDuration / chunkDuration);
-      let allTranscriptions = '';
 
-      // Process each chunk
-      for (let i = 0; i < totalChunks; i++) {
+      // Create an array of chunk processing promises
+      const chunkPromises = Array.from({ length: totalChunks }, async (_, i) => {
         const startTime = i * chunkDuration;
         const duration = Math.min(chunkDuration, videoDuration - startTime);
 
-        // Update progress
-        setProgress(Math.round((i / totalChunks) * 100));
-
-        // Extract audio for this chunk
-        const base64Audio = await generateBase64Audio(startTime, duration);
-
-        if (!base64Audio) {
-          console.error(`Failed to extract audio for chunk ${i + 1}/${totalChunks}`);
-          continue;
-        }
-
-        // Send to API
-        console.log(`Processing chunk ${i + 1}/${totalChunks} (${startTime}s to ${startTime + duration}s)`);
-        const response = await fetch(
-          `/api/generate-srt`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ audio: base64Audio }),
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        // Extract the transcription text from the response
-        if (data.success && data.result) {
-          // Append this chunk's transcription to the full text
-          if (data.result.text) {
-            allTranscriptions += (allTranscriptions ? ' ' : '') + data.result.text;
-            // Update the UI with progress
-            setSubtitles(allTranscriptions);
+        try {
+          // Extract audio for this chunk
+          const base64Audio = await generateBase64Audio(startTime, duration);
+          if (!base64Audio) {
+            console.error(`Failed to extract audio for chunk ${i + 1}/${totalChunks}`);
+            return null;
           }
 
-          // Process VTT data if available
-          if (data.result.vtt) {
-            // Adjust timestamps in VTT data to account for chunk position
-            const adjustedVtt = adjustVttTimestamps(data.result.vtt, startTime);
-            setVttSubtitles(prev => prev + adjustedVtt);
-            vttContent = vttContent + adjustedVtt;
-          }
-        } else {
-          console.error(`No transcription data found for chunk ${i + 1}/${totalChunks}`);
-        }
-      }
+          // Send to API
+          console.log(`Processing chunk ${i + 1}/${totalChunks} (${startTime}s to ${startTime + duration}s)`);
+          const response = await fetch(
+            `/api/generate-srt`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ audio: base64Audio }),
+            }
+          );
 
-      // Final update with complete transcription
+          if (!response.ok) {
+            throw new Error(`HTTP error: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+
+          // Return chunk processing result
+          return {
+            index: i,
+            startTime,
+            duration,
+            data
+          };
+        } catch (error) {
+          console.error(`Error processing chunk ${i + 1}/${totalChunks}:`, error);
+          return null;
+        }
+      });
+
+      // Process all chunks concurrently
+      const processedChunks = await Promise.all(chunkPromises);
+
+      // Create a Set to track unique transcription texts
+      const uniqueTranscriptions = new Set();
+
+      // Sort chunks by their original index to maintain order
+      const validChunks = processedChunks
+        .filter(chunk => chunk !== null && chunk.data?.success && chunk.data?.result)
+        .sort((a, b) => {
+          // Safely handle potential undefined indices
+          const indexA = a?.index ?? -1;
+          const indexB = b?.index ?? -1;
+          return indexA - indexB;
+        });
+
+      // Combine transcriptions and VTT
+      let allTranscriptions = '';
+      let combinedVttContent = 'WEBVTT\n\n';
+
+      validChunks.forEach(chunk => {
+        // Safely check and add unique text
+        if (chunk?.data?.result?.text) {
+          const chunkText = chunk.data.result.text.trim();
+
+          // Only add if not already present
+          if (!uniqueTranscriptions.has(chunkText)) {
+            uniqueTranscriptions.add(chunkText);
+            allTranscriptions += (allTranscriptions ? ' ' : '') + chunkText;
+          }
+        }
+
+        // Safely combine and adjust VTT timestamps
+        if (chunk?.data?.result?.vtt) {
+          const adjustedVtt = adjustVttTimestamps(chunk.data.result.vtt, chunk?.startTime ?? 0);
+          combinedVttContent += adjustedVtt;
+        }
+
+        // Safely update progress
+        setProgress(Math.round(((chunk?.index ?? 0 + 1) / validChunks.length) * 100));
+      });
+
+      // Final updates
       setSubtitles(allTranscriptions);
+      setVttSubtitles(combinedVttContent);
+      vttContent = combinedVttContent;
 
     } catch (error) {
       console.error('Error generating subtitles:', error);
@@ -1198,7 +1226,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                           : activeTab === 'silence'
                             ? 'Remove Silence'
                             : activeTab === 'subtitles'
-                              ? 'Generate Subtitles'
+                              ? 'Add Captions'
                               : activeTab === 'broll'
                                 ? 'Generate B-Roll'
                                 : 'Add Background Music'}
