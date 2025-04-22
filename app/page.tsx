@@ -715,23 +715,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 p-8">
-      <main className="max-w-2xl mx-auto flex flex-col gap-8 items-center">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 p-4 sm:p-8">
+      <main className="max-w-4xl mx-auto flex flex-col gap-8 items-center">
         <div className="flex flex-col items-center gap-3">
           <div className="flex items-center gap-3">
             <Video className="w-8 h-8 text-indigo-600" />
-            <h1 className="text-3xl font-bold text-center text-slate-800">
+            <h1 className="text-4xl font-bold text-center bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
               Video Wizard
             </h1>
           </div>
-          <p className="text-slate-600 text-center max-w-lg">
+          <p className="text-slate-600 text-center max-w-lg text-lg">
             Transform your videos with AI-powered tools. Convert to GIF, enhance audio, generate subtitles, and more.
           </p>
         </div>
 
         {ffmpeg ? (
           <div className="w-full space-y-6">
-            <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-slate-200/50">
               {/* Video Preview */}
               {video && videoUrl && (
                 <div className="mb-6">
@@ -739,7 +739,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                   <video
                     ref={videoRef}
                     controls
-                    className="w-full rounded-lg border border-slate-200"
+                    className="w-full rounded-xl border border-slate-200 shadow-sm"
                     src={videoUrl}
                   />
                 </div>
@@ -765,6 +765,64 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
                 {video && (
                   <div className="grid grid-cols-1 gap-6">
+                    {/* Replace the horizontal scrolling tab container with a wrapped grid layout */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-6">
+                      <button
+                        onClick={() => setActiveTab('gif')}
+                        className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 text-center cursor-pointer
+                          ${activeTab === 'gif'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}
+                      >
+                        Create GIF
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('audio')}
+                        className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 text-center cursor-pointer
+                          ${activeTab === 'audio'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}
+                      >
+                        Enhance Audio
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('silence')}
+                        className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 text-center cursor-pointer
+                          ${activeTab === 'silence'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}
+                      >
+                        Remove Silence
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('subtitles')}
+                        className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 text-center cursor-pointer
+                          ${activeTab === 'subtitles'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}
+                      >
+                        Add Captions
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('broll')}
+                        className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 text-center cursor-pointer
+                          ${activeTab === 'broll'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}
+                      >
+                        Generate B-Roll
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('music')}
+                        className={`px-4 py-2 rounded-xl font-medium transition-all duration-200 text-center cursor-pointer
+                          ${activeTab === 'music'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}
+                      >
+                        Add Background Music
+                      </button>
+                    </div>
+
                     {activeTab === 'gif' && (
                       <>
                         {/* Start Time Slider */}
@@ -868,7 +926,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         </div>
 
                         {/* Preview Time Indicator */}
-                        <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
+                        <div className="text-sm text-slate-600 bg-slate-50/50 p-3 rounded-xl border border-slate-200/50">
                           GIF will be created from {formatTime(startTime)} to {formatTime(startTime + gifDuration)}
                           {videoDuration ? ` (Video length: ${formatTime(videoDuration)})` : ''}
                         </div>
@@ -881,9 +939,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                             </div>
 
                             {/* Progress bar */}
-                            <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
+                            <div className="w-full bg-slate-200/50 rounded-full h-2.5">
                               <div
-                                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                                className="bg-gradient-to-r from-indigo-600 to-purple-600 h-2.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress}%` }}
                               ></div>
                             </div>
@@ -906,9 +964,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                             </div>
 
                             {/* Progress bar */}
-                            <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
+                            <div className="w-full bg-slate-200/50 rounded-full h-2.5">
                               <div
-                                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                                className="bg-gradient-to-r from-indigo-600 to-purple-600 h-2.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress}%` }}
                               ></div>
                             </div>
@@ -997,9 +1055,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                             </div>
 
                             {/* Progress bar */}
-                            <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
+                            <div className="w-full bg-slate-200/50 rounded-full h-2.5">
                               <div
-                                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                                className="bg-gradient-to-r from-indigo-600 to-purple-600 h-2.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress}%` }}
                               ></div>
                             </div>
@@ -1023,9 +1081,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                             </div>
 
                             {/* Progress bar */}
-                            <div className="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-100">
+                            <div className="w-full bg-slate-200/50 rounded-full h-2.5">
                               <div
-                                className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                                className="bg-gradient-to-r from-indigo-600 to-purple-600 h-2.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress}%` }}
                               ></div>
                             </div>
@@ -1341,10 +1399,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                             activeTab === 'broll' ? addCaptions :
                               addCaptions}
                     disabled={!video || isConverting || isGeneratingSubtitles}
-                    className={`w-full py-2 px-4 rounded-full cursor-pointer font-medium
+                    className={`w-full py-3 px-4 rounded-xl cursor-pointer font-medium transition-all duration-200
                       ${!video || isConverting || isGeneratingSubtitles
                         ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer'}`}
+                        : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg hover:scale-[1.02]'}`}
                   >
                     {isConverting || isGeneratingSubtitles
                       ? 'Processing...'
@@ -1361,72 +1419,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                                 : 'Add Background Music'}
                   </button>
                 )}
-
-                {/* Replace the horizontal scrolling tab container with a wrapped grid layout */}
-                {video && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-6">
-                    <button
-                      onClick={() => setActiveTab('gif')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
-                        ${activeTab === 'gif'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Create GIF
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('audio')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
-                        ${activeTab === 'audio'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Enhance Audio
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('silence')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
-                        ${activeTab === 'silence'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Remove Silence
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('subtitles')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
-                        ${activeTab === 'subtitles'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Add Captions
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('broll')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
-                        ${activeTab === 'broll'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Generate B-Roll
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('music')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors text-center cursor-pointer
-                        ${activeTab === 'music'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Add Background Music
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
             {/* Output */}
             {(output || isConverting) && (
-              <div className="bg-white p-6 rounded-lg shadow-md">
+              <div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-slate-200/50">
                 <p className="text-sm font-medium text-slate-600 mb-2">
                   {isConverting ? 'Converting video...'
                     : 'Generated output:'}
@@ -1444,14 +1442,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                       alt="Generated GIF"
                       width={640}
                       height={480}
-                      className="w-full rounded-lg"
+                      className="w-full rounded-xl shadow-sm"
                       unoptimized // Since we're using a Blob URL
                     />
                     <a
                       href={output}
                       download="converted.gif"
-                      className="mt-4 inline-block w-full text-center py-2 px-4 rounded-full
-                        bg-green-600 text-white font-medium hover:bg-green-700 cursor-pointer"
+                      className="mt-4 inline-block w-full text-center py-3 px-4 rounded-xl
+                        bg-gradient-to-r from-green-600 to-emerald-600 text-white font-medium hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
                     >
                       Download
                     </a>
@@ -1461,15 +1459,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         <p className="text-sm font-medium text-slate-600 mb-2">Preview:</p>
                         <video
                           controls
-                          className="w-full rounded-lg border border-slate-200"
+                          className="w-full rounded-xl shadow-sm"
                           src={output!}
                         />
                       </div>
                       <a
                         href={output}
                         download="converted.mp4"
-                        className="mt-4 inline-block w-full text-center py-2 px-4 rounded-full
-                        bg-green-600 text-white font-medium hover:bg-green-700 cursor-pointer"
+                        className="mt-4 inline-block w-full text-center py-3 px-4 rounded-xl
+                          bg-gradient-to-r from-green-600 to-emerald-600 text-white font-medium hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
                       >
                         Download
                       </a>
