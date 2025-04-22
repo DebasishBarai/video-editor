@@ -192,7 +192,7 @@ export default function Home() {
   };
 
   const generateSubtitles = async () => {
-    if (!ffmpeg || !video) return;
+    if (!ffmpeg || !video) return '';
 
     setIsGeneratingSubtitles(true);
     setSubtitles('');
@@ -219,7 +219,7 @@ export default function Home() {
       const totalChunks = Math.ceil(videoDuration / chunkDuration);
       let allTranscriptions = '';
 
-      // Process each chunk
+      // Process chunks sequentially to maintain order
       for (let i = 0; i < totalChunks; i++) {
         const startTime = i * chunkDuration;
         const duration = Math.min(chunkDuration, videoDuration - startTime);
