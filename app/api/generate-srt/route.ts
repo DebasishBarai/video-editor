@@ -2,28 +2,32 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    // Get the request body with the base64 encoded audio
-    const { audio } = await request.json();
+    const formData = await request.formData();
+    const file = formData.get('file') as File;
 
-    if (!audio) {
-      throw new Error('No audio data provided');
+    if (!file) {
+      throw new Error('No audio file provided');
     }
 
-    console.log('Making request to Cloudflare API...');
+    console.log('Making request to OpenAI Whisper API...');
+
+    // Create new FormData with required parameters
+    const apiFormData = new FormData();
+    apiFormData.append('file', file);
+    apiFormData.append('model', 'whisper-1');
+    apiFormData.append('response_format', 'vtt');
+    apiFormData.append('language', 'en');
 
     const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/openai/whisper-large-v3-turbo`,
+      'https://api.openai.com/v1/audio/transcriptions',
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
         },
-        body: JSON.stringify({ audio: audio })
+        body: apiFormData
       }
     );
-
-    console.log('Response:', response);
 
     if (!response.ok) {
       // Try to get error response body
@@ -44,13 +48,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const data = await response.json();
+    const vttData = await response.text();
 
-    console.log({ result: data.result });
+    // Convert VTT to text for the full transcription
+    const text = vttData
+      .split('\n')
+      .filter(line => !line.includes('-->') && !line.startsWith('WEBVTT') && line.trim() !== '')
+      .join(' ');
 
     return NextResponse.json({
       success: true,
-      result: data.result
+      result: {
+        text,
+        vtt: vttData
+      }
     });
   } catch (err) {
     console.error('API Error:', err);

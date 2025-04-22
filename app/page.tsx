@@ -47,6 +47,9 @@ export default function Home() {
   const [lastRun, setLastRun] = useState<'gif' | 'audio' | 'silence' | 'subtitles' | 'broll' | 'music'>('gif');
   const [progress, setProgress] = useState<number>(0);
   const [vttSubtitles, setVttSubtitles] = useState<string>('');
+  const [chapters, setChapters] = useState<string>('');
+  const [isGeneratingChapters, setIsGeneratingChapters] = useState<boolean>(false);
+  const [isBurningSubtitles, setIsBurningSubtitles] = useState<boolean>(false);
   // const [totalFrames, setTotalFrames] = useState<number>(0);
   ;
 
@@ -141,7 +144,7 @@ export default function Home() {
     }
   };
 
-  const extractAudio = async (startTime = 0, duration = 120) => {
+  const extractAudio = async (startTime = 0, duration = 300) => {
     if (!ffmpeg || !video) return null;
 
     try {
@@ -158,35 +161,9 @@ export default function Home() {
       ]);
 
       const data = await ffmpeg.readFile('output.wav');
-      const url = URL.createObjectURL(new Blob([data], { type: 'audio/wav' }));
-      setAudio(url);
       return data;
     } catch (error) {
       console.error('Error extracting audio:', error);
-      return null;
-    } finally {
-    }
-  };
-
-  const generateBase64Audio = async (startTime = 0, duration = 120) => {
-    if (!ffmpeg || !video) return null;
-
-    try {
-      const audioData = await extractAudio(startTime, duration);
-
-      // Convert Uint8Array to Base64
-      if (audioData instanceof Uint8Array) {
-        let binary = '';
-        for (let i = 0; i < audioData.length; i++) {
-          binary += String.fromCharCode(audioData[i]);
-        }
-        return btoa(binary);
-      }
-
-      console.log('audioData is not a Uint8Array', audioData);
-      return null;
-    } catch (error) {
-      console.error('Error generating base64 audio:', error);
       return null;
     }
   };
@@ -214,8 +191,8 @@ export default function Home() {
         URL.revokeObjectURL(videoElement.src);
       }
 
-      // Calculate number of chunks needed
-      const chunkDuration = 120; // 2 minutes in seconds
+      // Calculate number of chunks needed (5 minutes each)
+      const chunkDuration = 300; // 5 minutes in seconds
       const totalChunks = Math.ceil(videoDuration / chunkDuration);
       let allTranscriptions = '';
 
@@ -228,12 +205,19 @@ export default function Home() {
         setProgress(Math.round((i / totalChunks) * 100));
 
         // Extract audio for this chunk
-        const base64Audio = await generateBase64Audio(startTime, duration);
+        const audioData = await extractAudio(startTime, duration);
 
-        if (!base64Audio) {
+        if (!audioData) {
           console.error(`Failed to extract audio for chunk ${i + 1}/${totalChunks}`);
           continue;
         }
+
+        // Create a Blob from the audio data
+        const audioBlob = new Blob([audioData], { type: 'audio/wav' });
+
+        // Create FormData
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'audio.wav');
 
         // Send to API
         console.log(`Processing chunk ${i + 1}/${totalChunks} (${startTime}s to ${startTime + duration}s)`);
@@ -241,7 +225,7 @@ export default function Home() {
           `/api/generate-srt`,
           {
             method: 'POST',
-            body: JSON.stringify({ audio: base64Audio }),
+            body: formData
           }
         );
 
@@ -366,7 +350,6 @@ export default function Home() {
   }
 
   const addCaptions = async () => {
-
     if (!ffmpeg || !video) return;
 
     setIsConverting(true);
@@ -375,23 +358,70 @@ export default function Home() {
     setCurrentRun('subtitles');
 
     try {
-
-      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
-
       if (vttSubtitles === '') {
-        const generatedSubtitles = await generateSubtitles()
-        await burnSubtitlesToVideo(generatedSubtitles)
+        const generatedSubtitles = await generateSubtitles();
+        if (generatedSubtitles) {
+          setVttSubtitles(generatedSubtitles);
+        }
       }
-
-      await burnSubtitlesToVideo(vttSubtitles)
-
     } catch (error) {
-      console.error('Error enhancing audio:', error);
+      console.error('Error generating subtitles:', error);
+      alert('Failed to generate subtitles. Please try again.');
     } finally {
       setIsConverting(false);
       setProgress(0);
     }
-  }
+  };
+
+  const copySubtitlesToClipboard = () => {
+    if (!subtitles) return;
+    navigator.clipboard.writeText(subtitles);
+    alert('Subtitles copied to clipboard!');
+  };
+
+  const burnSubtitlesToVideo = async () => {
+    if (!ffmpeg || !video || !vttSubtitles) {
+      alert('Please generate subtitles first');
+      return;
+    }
+
+    setIsBurningSubtitles(true);
+    setOutput(null);
+    setProgress(0);
+
+    try {
+      // Write the input video file
+      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
+
+      // Write the ASS subtitle file
+      const assContent = convertVttToAss(vttSubtitles);
+      console.log({ assContent });
+      await ffmpeg.writeFile('subtitles.ass', assContent);
+
+      // Set up progress handler
+      ffmpeg.on('progress', handleProgress);
+
+      // Burn subtitles into the video
+      await ffmpeg.exec([
+        '-i', 'input.mp4',
+        '-vf', 'ass=filename=subtitles.ass',
+        '-c:a', 'copy',
+        'output.mp4'
+      ]);
+
+      const data = await ffmpeg.readFile('output.mp4');
+      const url = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
+      setOutput(url);
+      setLastRun('subtitles');
+    } catch (error) {
+      console.error('Error adding subtitles to video:', error);
+      alert('Failed to burn subtitles to video. Please try again.');
+    } finally {
+      ffmpeg.off('progress', handleProgress);
+      setIsBurningSubtitles(false);
+      setProgress(0);
+    }
+  };
 
   // Helper function to adjust VTT timestamps
   const adjustVttTimestamps = (vttData: string, offsetSeconds: number): string => {
@@ -470,48 +500,6 @@ export default function Home() {
     const formattedSeconds = seconds.toFixed(3).padStart(6, '0');
 
     return `${formattedHours}:${formattedMinutes}:${formattedSeconds}`;
-  };
-
-  // Update the burnSubtitlesToVideo function to include a progress bar
-  const burnSubtitlesToVideo = async (vttSubtitles: string | undefined | null) => {
-    if (!ffmpeg || !video || !vttSubtitles) return;
-
-    setIsAddingCaptions(true);
-    setOutput(null);
-    setProgress(0);
-
-    try {
-      // Write the input video file
-      await ffmpeg.writeFile('input.mp4', await fetchFile(video));
-
-      // Write the ASS subtitle file
-      const assContent = convertVttToAss(vttSubtitles);
-      console.log({ assContent });
-      await ffmpeg.writeFile('subtitles.ass', assContent);
-      // await ffmpeg.writeFile('subtitles.ass', convertVttToAss(vttSubtitles));
-
-      // Set up progress handler
-      ffmpeg.on('progress', handleProgress);
-
-      // Burn subtitles into the video
-      await ffmpeg.exec([
-        '-i', 'input.mp4',
-        '-vf', 'ass=filename=subtitles.ass',
-        '-c:a', 'copy',
-        'output.mp4'
-      ]);
-
-      const data = await ffmpeg.readFile('output.mp4');
-      const url = URL.createObjectURL(new Blob([data], { type: 'video/mp4' }));
-      setOutput(url);
-      setLastRun('subtitles');
-    } catch (error) {
-      console.error('Error adding subtitles to video:', error);
-    } finally {
-      ffmpeg.off('progress', handleProgress);
-      setIsAddingCaptions(false);
-      setProgress(0);
-    }
   };
 
   // Helper function to convert VTT to ASS format for download
@@ -641,6 +629,89 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     }
 
     return `${hours}:${minutes}:${formattedSeconds}`;
+  };
+
+  const generateChapters = async () => {
+    if (!subtitles || !vttSubtitles) {
+      alert('Please generate subtitles first');
+      return;
+    }
+
+    setIsGeneratingChapters(true);
+    try {
+      const response = await fetch('/api/generate-chapters', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          transcript: subtitles,
+          vtt: vttSubtitles
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        setChapters(data.result.chapters);
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error) {
+      console.error('Error generating chapters:', error);
+      alert('Failed to generate chapters. Please try again.');
+    } finally {
+      setIsGeneratingChapters(false);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert('Copied to clipboard!');
+  };
+
+  const downloadChapters = (format: 'txt' | 'srt' | 'md') => {
+    if (!chapters) return;
+
+    let content = '';
+    let filename = 'chapters';
+    let mimeType = 'text/plain';
+
+    switch (format) {
+      case 'txt':
+        content = chapters;
+        filename += '.txt';
+        break;
+      case 'srt':
+        content = chapters.split('\n').map((line, index) => {
+          if (line.trim() === '') return '';
+          const [timestamp, title] = line.split(' - ');
+          return `${index + 1}\n${timestamp} --> ${timestamp}\n${title}\n`;
+        }).join('\n');
+        filename += '.srt';
+        mimeType = 'text/plain';
+        break;
+      case 'md':
+        content = chapters.split('\n').map(line => {
+          if (line.trim() === '') return '';
+          const [timestamp, title] = line.split(' - ');
+          return `## ${timestamp} - ${title}`;
+        }).join('\n\n');
+        filename += '.md';
+        mimeType = 'text/markdown';
+        break;
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -962,68 +1033,154 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         )}
 
                         {subtitles && (
-                          <div>
-                            <label className="block text-sm font-medium text-slate-600 mb-2">
-                              Generated captions
-                            </label>
-                            <textarea
-                              value={subtitles}
-                              onChange={(e) => setSubtitles(e.target.value)}
-                              className="w-full h-64 p-3 rounded-lg border border-slate-200 
-                                focus:outline-none focus:ring-2 focus:ring-indigo-500
-                                text-sm font-mono text-gray-900"
-                              placeholder="Subtitles will appear here..."
-                            />
-
-                            <div className="flex flex-wrap gap-2 mt-4">
+                          <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                              <h3 className="text-lg font-semibold text-gray-900">Generated Subtitles</h3>
                               <button
-                                onClick={() => {
-                                  const blob = new Blob([vttSubtitles], { type: 'text/vtt' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = 'subtitles.vtt';
-                                  a.click();
-                                  URL.revokeObjectURL(url);
-                                }}
-                                className="px-4 py-2 rounded-lg font-medium bg-indigo-600 
-                                  text-white hover:bg-indigo-700"
+                                onClick={burnSubtitlesToVideo}
+                                disabled={isBurningSubtitles}
+                                className={`px-4 py-2 rounded-lg font-medium
+                                  ${isBurningSubtitles
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                               >
-                                Download VTT
+                                {isBurningSubtitles ? 'Burning Subtitles...' : 'Burn Subtitles to Video'}
                               </button>
+                            </div>
 
-                              <button
-                                onClick={() => {
-                                  const assContent = convertVttToAss(vttSubtitles);
-                                  const blob = new Blob([assContent], { type: 'text/plain' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = 'subtitles.ass';
-                                  a.click();
-                                  URL.revokeObjectURL(url);
-                                }}
-                                className="px-4 py-2 rounded-lg font-medium bg-purple-600 
-                                  text-white hover:bg-purple-700"
-                              >
-                                Download ASS
-                              </button>
+                            <div className="bg-white p-4 rounded-lg border border-gray-200">
+                              <div className="flex justify-between items-start mb-4">
+                                <div className="flex-1">
+                                  <textarea
+                                    value={subtitles}
+                                    onChange={(e) => setSubtitles(e.target.value)}
+                                    className="w-full h-64 p-3 rounded-lg border border-slate-200 
+                                      focus:outline-none focus:ring-2 focus:ring-indigo-500
+                                      text-sm font-mono text-gray-900"
+                                    placeholder="Subtitles will appear here..."
+                                  />
+                                </div>
+                                <button
+                                  onClick={copySubtitlesToClipboard}
+                                  className="ml-4 p-2 text-gray-500 hover:text-gray-700"
+                                  title="Copy to clipboard"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                                    <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                                  </svg>
+                                </button>
+                              </div>
 
-                              <button
-                                onClick={() => {
-                                  const blob = new Blob([subtitles], { type: 'text/plain' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = 'transcript.txt';
-                                  a.click();
-                                  URL.revokeObjectURL(url);
-                                }}
-                                className="px-4 py-2 rounded-lg font-medium bg-green-600 
-                                  text-white hover:bg-green-700"
-                              >
-                                Download Text
-                              </button>
+                              <div className="flex flex-wrap gap-2 mt-4">
+                                <button
+                                  onClick={() => {
+                                    const blob = new Blob([vttSubtitles], { type: 'text/vtt' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = 'subtitles.vtt';
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                  className="px-4 py-2 rounded-lg font-medium bg-indigo-600 
+                                    text-white hover:bg-indigo-700"
+                                >
+                                  Download VTT
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    const assContent = convertVttToAss(vttSubtitles);
+                                    const blob = new Blob([assContent], { type: 'text/plain' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = 'subtitles.ass';
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                  className="px-4 py-2 rounded-lg font-medium bg-purple-600 
+                                    text-white hover:bg-purple-700"
+                                >
+                                  Download ASS
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    const blob = new Blob([subtitles], { type: 'text/plain' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = 'transcript.txt';
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                  className="px-4 py-2 rounded-lg font-medium bg-green-600 
+                                    text-white hover:bg-green-700"
+                                >
+                                  Download Text
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-4">
+                              <div className="flex justify-between items-center">
+                                <h3 className="text-lg font-semibold text-gray-900">Generated Chapters</h3>
+                                <button
+                                  onClick={generateChapters}
+                                  disabled={isGeneratingChapters}
+                                  className={`px-4 py-2 rounded-lg font-medium
+                                    ${isGeneratingChapters
+                                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                      : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                                >
+                                  {isGeneratingChapters ? 'Generating...' : 'Generate Chapters'}
+                                </button>
+                              </div>
+
+                              {chapters && (
+                                <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                  <div className="flex justify-between items-start mb-4">
+                                    <div className="flex-1">
+                                      <pre className="whitespace-pre-wrap font-mono text-sm text-gray-800">
+                                        {chapters}
+                                      </pre>
+                                    </div>
+                                    <button
+                                      onClick={() => copyToClipboard(chapters)}
+                                      className="ml-4 p-2 text-gray-500 hover:text-gray-700"
+                                      title="Copy to clipboard"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                                        <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                                      </svg>
+                                    </button>
+                                  </div>
+
+                                  <div className="flex gap-2 mt-4">
+                                    <button
+                                      onClick={() => downloadChapters('txt')}
+                                      className="px-3 py-1 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    >
+                                      Download TXT
+                                    </button>
+                                    <button
+                                      onClick={() => downloadChapters('srt')}
+                                      className="px-3 py-1 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    >
+                                      Download SRT
+                                    </button>
+                                    <button
+                                      onClick={() => downloadChapters('md')}
+                                      className="px-3 py-1 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    >
+                                      Download MD
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
